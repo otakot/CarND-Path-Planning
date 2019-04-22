@@ -1,3 +1,12 @@
+# CMAKE generated resouces 
+build/
+
+# Eclipse resources
+.cproject
+.project
+.settings/
+.DS_Store
+
 # Prerequisites
 *.d
 
