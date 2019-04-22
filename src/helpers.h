@@ -10,6 +10,32 @@
 using std::string;
 using std::vector;
 
+void LoadMap(const string& map_file, vector<double>& map_waypoints_x, vector<double>& map_waypoints_y,
+  vector<double>& map_waypoints_s, vector<double>& map_waypoints_dx, vector<double>& map_waypoints_dy){
+
+  std::ifstream in_map_(map_file.c_str(), std::ifstream::in);
+
+  string line;
+  while (getline(in_map_, line)) {
+    std::istringstream iss(line);
+    double x;
+    double y;
+    float s;
+    float d_x;
+    float d_y;
+    iss >> x;
+    iss >> y;
+    iss >> s;
+    iss >> d_x;
+    iss >> d_y;
+    map_waypoints_x.push_back(x);
+    map_waypoints_y.push_back(y);
+    map_waypoints_s.push_back(s);
+    map_waypoints_dx.push_back(d_x);
+    map_waypoints_dy.push_back(d_y);
+  }
+}
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 //   else the empty string "" will be returned.
