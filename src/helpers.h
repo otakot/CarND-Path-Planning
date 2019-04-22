@@ -10,7 +10,7 @@
 using std::string;
 using std::vector;
 
-void LoadMap(const string& map_file, vector<double>& map_waypoints_x, vector<double>& map_waypoints_y,
+void LoadRoadMap(const string& map_file, vector<double>& map_waypoints_x, vector<double>& map_waypoints_y,
   vector<double>& map_waypoints_s, vector<double>& map_waypoints_dx, vector<double>& map_waypoints_dy){
 
   std::ifstream in_map_(map_file.c_str(), std::ifstream::in);

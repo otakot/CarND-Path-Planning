@@ -11,6 +11,7 @@
 #include "helpers.h"
 #include "json.hpp"
 #include "spline.h"
+#include "driving_context.h"
 
 using nlohmann::json;
 using std::string;
@@ -18,6 +19,7 @@ using std::vector;
 
 const string kTrackMapFilePath = "../data/highway_map.csv";  // Waypoint map to read from
 const double kMaxS = 6945.554; // The max s value before wrapping around the track back to 0
+const int kTotalLanes = 3;
 const int kStartLane = 1; //start counting from 0 t(left most lane)
 static const double kReferenceVelocity = 49.5; //mph
 static const float kSafeDistanceToSpeedRatio = 0.5;
@@ -30,8 +32,7 @@ static const double kCarPositionRefreshTime = 0.02; // in seconds
 static const double kDecelerationConformLimit = 5; // in m/s2
 static const double kAccelerationConformLimit = 9; // in m/s2
 
-json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_waypoints_x,const vector<double>& map_waypoints_y,
-  const vector<double>& map_waypoints_s, const vector<double>& map_waypoints_dx, const vector<double>& map_waypoints_dy,
+json ProcessTelemetryData(const json& telemetry_data, const DrivingContext& context,
   float& target_ego_velocity, int& ego_lane){
 
   // Ego localization Data
@@ -50,7 +51,7 @@ json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_
   double end_path_s = telemetry_data["end_path_s"];
   double end_path_d = telemetry_data["end_path_d"];
 
-  // Sensor Fusion Data, a list of all other cars on the same side of the road.
+  // Sensor Fusion Data, contains information about other cars on the road.
   auto sensor_fusion = telemetry_data["sensor_fusion"];
 
 
@@ -70,8 +71,8 @@ json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_
   for (int i = 0; i < sensor_fusion.size(); i++){
     //check whether detected car is in our lane
     const float d = sensor_fusion[i][6];
-    const int lane_center_line = ego_lane * kLaneWidth + kLaneWidth/2;
-    if ((d > (lane_center_line - kLaneWidth/2)) && (d <(lane_center_line + kLaneWidth/2))){
+    const int lane_center_line = ego_lane * context.lane_width_ + context.lane_width_/2;
+    if ((d > (lane_center_line - context.lane_width_/2)) && (d <(lane_center_line + context.lane_width_/2))){
 
       const double v_x = sensor_fusion[i][3];
       const double v_y = sensor_fusion[i][4];
@@ -80,9 +81,9 @@ json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_
 
       //project longitudinal position of detected car into the future:
       // where detected car would be if ego car position would evolve to the last point of previous path
-      detected_car_s+=(double)previous_path_size * kCarPositionRefreshTime * detected_car_velocity;
+      detected_car_s+=(double)previous_path_size * context.ego_postion_refresh_interval_ * detected_car_velocity;
       if((detected_car_s > car_s) && ((detected_car_s - car_s) <
-        target_ego_velocity * kSafeDistanceToSpeedRatio * kMphToMpsRatio)) {
+        target_ego_velocity * context.safe_distance_to_speed_ratio_ * kMphToMpsRatio)) {
         // if detected car is in front of ego and is too close
         slow_car_ahead = true;
       }
@@ -95,11 +96,11 @@ json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_
     //if (LaneChangeFeasable()) {
       // ChangeLane();
     //} else { // or decrease the speed and wait for opportunity to change lane
-      target_ego_velocity-= kCarPositionRefreshTime * kDecelerationConformLimit * kMphToMpsRatio;
+      target_ego_velocity-= context.ego_postion_refresh_interval_ * context.max_deceleration_ * kMphToMpsRatio;
       // PrepareForLaneChange();
     //}
-  } else if (target_ego_velocity < kReferenceVelocity) {
-    target_ego_velocity+= kCarPositionRefreshTime * kAccelerationConformLimit * kMphToMpsRatio;
+  } else if (target_ego_velocity < context.max_speed_) {
+    target_ego_velocity+= context.ego_postion_refresh_interval_ * context.max_accceleration_ * kMphToMpsRatio;
   }
 
 
@@ -145,8 +146,10 @@ json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_
   // generate key points of new trajectory (to interpolate through them later)
   for (int i = 0; i < kTotalTrajectoryAnchorPoints; i++) {
 
-    std::pair<double,double> next_key_point = getXY(car_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
-      kLaneWidth/2 + kLaneWidth * ego_lane, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+    std::pair<double,double> next_key_point =
+      getXY(car_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
+        context.lane_width_/2 + context.lane_width_ * ego_lane,
+        context.map_waypoints_s_, context.map_waypoints_x_, context.map_waypoints_y_);
     anchor_points_x.push_back(next_key_point.first);
     anchor_points_y.push_back(next_key_point.second);
 
@@ -180,7 +183,8 @@ json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_
   double target_x = kDistanceBetweenTrajectoryKeyPoints;
   double target_y = trajectory_spline(target_x);
   const double target_dist = sqrt(target_x*target_x + target_y*target_y);
-  const double total_segments = target_dist / (kCarPositionRefreshTime * target_ego_velocity / kMphToMpsRatio);
+  const double total_segments = target_dist /
+    (context.ego_postion_refresh_interval_ * target_ego_velocity / kMphToMpsRatio);
 
 
   //fill in the rest of trajectory points
@@ -215,17 +219,29 @@ json ProcessTelemetryData(const json& telemetry_data, const vector<double>& map_
 }
 
 int main() {
-  uWS::Hub h;
 
   // Load track map (values for x,y,s and d normalized normal vectors for track waypoints)
   vector<double> map_waypoints_x, map_waypoints_y, map_waypoints_s, map_waypoints_dx, map_waypoints_dy;
-  LoadMap(kTrackMapFilePath, map_waypoints_x, map_waypoints_y, map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
+  LoadRoadMap(kTrackMapFilePath, map_waypoints_x, map_waypoints_y,
+    map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
 
+  // create driving environment context
+  DrivingContext context(kTotalLanes, kLaneWidth, kReferenceVelocity, kCarPositionRefreshTime,
+    kSafeDistanceToSpeedRatio, kDecelerationConformLimit, kAccelerationConformLimit, std::move(map_waypoints_x),
+    std::move(map_waypoints_y),std::move(map_waypoints_s), std::move(map_waypoints_dx), std::move(map_waypoints_dy));
+
+  // initial ego configuration
   int ego_lane = kStartLane;
   float target_ego_velocity = 0; // in m/s. we start smoothly to prevent max acceleration exceed
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,
-               &map_waypoints_dx,&map_waypoints_dy, &target_ego_velocity, &ego_lane]
+  // create instance of ego vehile and configure it with initial settings
+//  Vehicle ego = Vehicle(lane_num, s, this->lane_speeds[lane_num], 0);
+//  ego.configure(config_data);
+//  ego.state = "KL";
+
+
+  uWS::Hub web_socket_hub;
+  web_socket_hub.onMessage([&context, &target_ego_velocity, &ego_lane]
               (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -241,8 +257,7 @@ int main() {
         
         if (event == "telemetry") {
           // j[1] is the telemetry data JSON object
-          json msgJson = ProcessTelemetryData(j[1], map_waypoints_x, map_waypoints_y, map_waypoints_s,
-               map_waypoints_dx,  map_waypoints_dy,  target_ego_velocity, ego_lane);
+          json msgJson = ProcessTelemetryData(j[1], context, target_ego_velocity, ego_lane);
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
@@ -256,23 +271,23 @@ int main() {
     }  // end websocket if
   }); // end h.onMessage
 
-  h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
+  web_socket_hub.onConnection([&web_socket_hub](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
     std::cout << "Connected!!!" << std::endl;
   });
 
-  h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code,
+  web_socket_hub.onDisconnection([&web_socket_hub](uWS::WebSocket<uWS::SERVER> ws, int code,
                          char *message, size_t length) {
     ws.close();
     std::cout << "Disconnected" << std::endl;
   });
 
   int port = 4567;
-  if (h.listen(port)) {
+  if (web_socket_hub.listen(port)) {
     std::cout << "Listening to port " << port << std::endl;
   } else {
     std::cerr << "Failed to listen to port" << std::endl;
     return -1;
   }
   
-  h.run();
+  web_socket_hub.run();
 }
