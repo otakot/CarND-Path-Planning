@@ -1,19 +1,27 @@
-#ifndef HELPERS_H
-#define HELPERS_H
+#ifndef UTILITIES_H
+#define UTILITIES_H
 
-#include <math.h>
-#include <string>
+#include "utilities.h"
+
+#include <fstream>
+#include <iostream>
+#include <sstream>
 #include <vector>
-#include <tuple>
+#include <string>
+#include <cstdint>
+#include <math.h>
 
-// for convenience
+#include "json.hpp"
+#include "vehicle.h"
+
 using std::string;
 using std::vector;
+using nlohmann::json;
 
 void LoadRoadMap(const string& map_file, vector<double>& map_waypoints_x, vector<double>& map_waypoints_y,
   vector<double>& map_waypoints_s, vector<double>& map_waypoints_dx, vector<double>& map_waypoints_dy){
 
-  std::ifstream in_map_(map_file.c_str(), std::ifstream::in);
+  std::ifstream in_map_(map_file, std::ifstream::in);
 
   string line;
   while (getline(in_map_, line)) {
@@ -155,8 +163,7 @@ vector<double> getFrenet(double x, double y, double theta,
 
 // Transform from Frenet s,d coordinates to Cartesian x,y
 std::pair<double, double> getXY(double s, double d, const vector<double> &maps_s,
-                     const vector<double> &maps_x, 
-                     const vector<double> &maps_y) {
+                     const vector<double> &maps_x, const vector<double> &maps_y) {
   int prev_wp = -1;
 
   while (s > maps_s[prev_wp+1] && (prev_wp < (int)(maps_s.size()-1))) {
@@ -181,4 +188,35 @@ std::pair<double, double> getXY(double s, double d, const vector<double> &maps_s
   return {x,y};
 }
 
-#endif  // HELPERS_H
+bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, float& lane_speed) {
+  // All non ego vehicles in a lane have the same speed, so to get the speed
+  //   limit for a lane, we can just find one vehicle in that lane.
+  for (Vehicle vehicle : predictions) {
+    if (vehicle.lane_index_ == lane_index) {
+      lane_speed = vehicle.velocity_;
+      return true;
+    }
+  }
+  // Found no vehicle in the lane
+  return false;
+}
+
+std::uint8_t GetLaneIndex(double d, double lane_width) {
+  return d / lane_width;
+}
+
+Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json& sensor_data){
+
+  const double x = sensor_data[1];
+  const double y = sensor_data[2];
+  const double v_x = sensor_data[3];
+  const double v_y = sensor_data[4];
+  const double velocity = sqrt(v_x*v_x + v_y*v_y);
+  const std::uint8_t id = sensor_data[0];
+  const double s = sensor_data[5];
+  const double d = sensor_data[6];
+  const std::uint8_t lane_index = GetLaneIndex(d, context->lane_width_);
+  return Vehicle(context, id, lane_index, x, y, velocity, s, d);
+}
+
+#endif  // UTILITIES_H

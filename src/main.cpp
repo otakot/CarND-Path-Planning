@@ -1,5 +1,4 @@
 #include <uWS/uWS.h>
-#include <fstream>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -8,10 +7,11 @@
 
 #include "Eigen/Core"
 #include "Eigen/QR"
-#include "helpers.h"
 #include "json.hpp"
 #include "spline.h"
+#include "vehicle.h"
 #include "driving_context.h"
+#include "utilities.h"
 
 using nlohmann::json;
 using std::string;
@@ -19,21 +19,21 @@ using std::vector;
 
 const string kTrackMapFilePath = "../data/highway_map.csv";  // Waypoint map to read from
 const double kMaxS = 6945.554; // The max s value before wrapping around the track back to 0
-const int kTotalLanes = 3;
-const int kStartLane = 1; //start counting from 0 t(left most lane)
+const uint8_t kTotalLanes = 3;
+const uint8_t kStartLane = 1; //start counting from 0 t(left most lane)
 static const double kReferenceVelocity = 49.5; //mph
-static const float kSafeDistanceToSpeedRatio = 0.5;
+static const double kSafeDistanceToSpeedRatio = 0.5;
 static const double kMphToMpsRatio = 2.24;
-const int kTotalTrajectoryPoints = 50;
-const int kTotalTrajectoryAnchorPoints = 5;
-const int kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
-const int kLaneWidth = 4; // in meters
+const uint8_t kTotalTrajectoryPoints = 50;
+const uint8_t kTotalTrajectoryAnchorPoints = 5;
+const uint8_t kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
+const uint8_t kLaneWidth = 4; // in meters
 static const double kCarPositionRefreshTime = 0.02; // in seconds
 static const double kDecelerationConformLimit = 5; // in m/s2
 static const double kAccelerationConformLimit = 9; // in m/s2
 
-json ProcessTelemetryData(const json& telemetry_data, const DrivingContext& context,
-  float& target_ego_velocity, int& ego_lane){
+json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& context,
+  double& target_ego_velocity, std::uint8_t& ego_lane){
 
   // Ego localization Data
   double car_x = telemetry_data["x"];
@@ -54,12 +54,12 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext& cont
   // Sensor Fusion Data, contains information about other cars on the road.
   auto sensor_fusion = telemetry_data["sensor_fusion"];
 
-
-  /**
-   * TODO: define a path made up of (x,y) points that the car will visit
-   *   sequentially every .02 seconds
-   */
-
+  // generate a list of all other cars on the same side of the road.
+  vector<Vehicle> other_vehicles;
+  other_vehicles.reserve(sensor_fusion.size());
+  for (const json vehicle_data : sensor_fusion) {
+    other_vehicles.push_back(CreateVehicle(std::make_shared<DrivingContext>(context), vehicle_data));
+  }
 
   // DEFINE SAFE SPEED FOR CURRENT CAR MOVE
 
@@ -68,20 +68,13 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext& cont
     car_x = end_path_s;
   }
   bool slow_car_ahead = false;
-  for (int i = 0; i < sensor_fusion.size(); i++){
-    //check whether detected car is in our lane
-    const float d = sensor_fusion[i][6];
-    const int lane_center_line = ego_lane * context.lane_width_ + context.lane_width_/2;
-    if ((d > (lane_center_line - context.lane_width_/2)) && (d <(lane_center_line + context.lane_width_/2))){
+  for (const Vehicle vehilce : other_vehicles){
+    if (ego_lane == vehilce.lane_index_){  //check whether detected car is in our lane
 
-      const double v_x = sensor_fusion[i][3];
-      const double v_y = sensor_fusion[i][4];
-      const double detected_car_velocity = sqrt(v_x*v_x + v_y*v_y);
-      double detected_car_s = sensor_fusion[i][5];
-
-      //project longitudinal position of detected car into the future:
+      double detected_car_s = vehilce.s_;
+      // project longitudinal position of detected car into the future:
       // where detected car would be if ego car position would evolve to the last point of previous path
-      detected_car_s+=(double)previous_path_size * context.ego_postion_refresh_interval_ * detected_car_velocity;
+      detected_car_s+=(double)previous_path_size * context.ego_postion_refresh_interval_ * vehilce.velocity_;
       if((detected_car_s > car_s) && ((detected_car_s - car_s) <
         target_ego_velocity * context.safe_distance_to_speed_ratio_ * kMphToMpsRatio)) {
         // if detected car is in front of ego and is too close
@@ -146,7 +139,7 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext& cont
   // generate key points of new trajectory (to interpolate through them later)
   for (int i = 0; i < kTotalTrajectoryAnchorPoints; i++) {
 
-    std::pair<double,double> next_key_point =
+    std::pair<double, double> next_key_point =
       getXY(car_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
         context.lane_width_/2 + context.lane_width_ * ego_lane,
         context.map_waypoints_s_, context.map_waypoints_x_, context.map_waypoints_y_);
@@ -226,18 +219,18 @@ int main() {
     map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
 
   // create driving environment context
-  DrivingContext context(kTotalLanes, kLaneWidth, kReferenceVelocity, kCarPositionRefreshTime,
+  DrivingContext context{kTotalLanes, kLaneWidth, kReferenceVelocity, kCarPositionRefreshTime,
     kSafeDistanceToSpeedRatio, kDecelerationConformLimit, kAccelerationConformLimit, std::move(map_waypoints_x),
-    std::move(map_waypoints_y),std::move(map_waypoints_s), std::move(map_waypoints_dx), std::move(map_waypoints_dy));
+    std::move(map_waypoints_y),std::move(map_waypoints_s), std::move(map_waypoints_dx), std::move(map_waypoints_dy)};
 
   // initial ego configuration
-  int ego_lane = kStartLane;
-  float target_ego_velocity = 0; // in m/s. we start smoothly to prevent max acceleration exceed
+  std::uint8_t ego_lane = kStartLane;
+  double target_ego_velocity = 0; // in m/s. we start smoothly to prevent max acceleration exceed
 
   // create instance of ego vehile and configure it with initial settings
-//  Vehicle ego = Vehicle(lane_num, s, this->lane_speeds[lane_num], 0);
-//  ego.configure(config_data);
-//  ego.state = "KL";
+  //  Vehicle ego = Vehicle(lane_num, s, this->lane_speeds[lane_num], 0);
+  //  ego.configure(config_data);
+  //  ego.state = "KL";
 
 
   uWS::Hub web_socket_hub;
@@ -257,7 +250,7 @@ int main() {
         
         if (event == "telemetry") {
           // j[1] is the telemetry data JSON object
-          json msgJson = ProcessTelemetryData(j[1], context, target_ego_velocity, ego_lane);
+          json msgJson = ProcessTelemetryData(j[1], std::move(context), target_ego_velocity, ego_lane);
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
