@@ -1,4 +1,5 @@
 #include "vehicle.h"
+#include "cost.h"
 
 #include <algorithm>
 #include <iterator>
@@ -20,7 +21,7 @@ DrivingState Vehicle::CalculateNextOptimalDrivingState(const vector<Vehicle>& pr
   vector<DrivingState> feasible_next_driving_states;
   for (const State state_id : sucessor_states) {
     const DrivingState possible_driving_state = CreateDrivingState(state_id, predictions);
-    cost = 0.0;//CalculateTargetStateCost(driving_context_, *this, predictions, possible_driving_state);
+    cost = CalculateTargetStateCost(driving_context_, *this, predictions, possible_driving_state);
     costs.push_back(cost);
     feasible_next_driving_states.push_back(possible_driving_state);
   }
