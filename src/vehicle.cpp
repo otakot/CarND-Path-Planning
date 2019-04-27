@@ -203,7 +203,7 @@ DrivingState Vehicle::CreateLaneChangeState(const State& target_state, const vec
   return DrivingState{target_lane_index, target_lane_kinematics, target_state};
 }
 
-double Vehicle::PredictLongitudinalPosition(uint16_t time) {
+double Vehicle::PredictLongitudinalPosition(const double time) const{
   return s_ + velocity_*time + acceleration_*time*time/2.0;
 }
 

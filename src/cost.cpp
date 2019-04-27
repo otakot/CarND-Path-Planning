@@ -27,19 +27,6 @@ float CalculateSuboptimalSpeedCost(const Vehicle& vehicle,
   return cost * kSuboptimalSpeedCostWeight;
 }
 
-bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, double& lane_speed) {
-  // All non ego vehicles in a lane have the same speed, so to get the speed
-  //   limit for a lane, we can just find one vehicle in that lane.
-  for (Vehicle vehicle : predictions) {
-    if (vehicle.lane_index_ == lane_index) {
-      lane_speed = vehicle.velocity_;
-      return true;
-    }
-  }
-  // Found no vehicle in the lane
-  return false;
-}
-
 float CalculateTargetStateCost(const std::shared_ptr<DrivingContext> driving_context,
                                const Vehicle& ego_vehicle,
                                const vector<Vehicle>& predictions,

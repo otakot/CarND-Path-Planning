@@ -58,7 +58,7 @@ bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, 
  *  Calculates index of the lane by given valued of D (Frenet coordinates) and lane width information
  *  lane indices start from 0 (left most lane)
  */
-std::uint8_t GetLaneIndex(double d, double lane_width);
+std::uint8_t CalculateLaneIndex(double d, double lane_width);
 
 Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json& sensor_data);
 

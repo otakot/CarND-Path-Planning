@@ -201,7 +201,7 @@ bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, 
   return false;
 }
 
-std::uint8_t GetLaneIndex(double d, double lane_width) {
+std::uint8_t CalculateLaneIndex(double d, double lane_width) {
   return d / lane_width;
 }
 
@@ -215,7 +215,7 @@ Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json&
   const std::uint8_t id = sensor_data[0];
   const double s = sensor_data[5];
   const double d = sensor_data[6];
-  const std::uint8_t lane_index = GetLaneIndex(d, context->lane_width_);
+  const std::uint8_t lane_index = CalculateLaneIndex(d, context->lane_width_);
   return Vehicle(context, id, lane_index, x, y, velocity, s, d);
 }
 

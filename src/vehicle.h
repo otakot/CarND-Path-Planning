@@ -15,8 +15,8 @@ class Vehicle {
   // Constructors
 
   Vehicle(std::shared_ptr<DrivingContext> driving_context, uint8_t id, uint8_t lane_index, double x, double y,
-    double velocity, double s, double d, double acceleration=.0, double yaw=.0) : driving_context_(driving_context), id_(id),
-    lane_index_(lane_index), x_(x), y_(y), velocity_(velocity), s_(s),d_(d), acceleration_(acceleration), yaw_(yaw){
+    double velocity, double s, double d, double yaw=.0, double acceleration=.0) : driving_context_(driving_context), id_(id),
+    lane_index_(lane_index), x_(x), y_(y), velocity_(velocity), s_(s),d_(d), yaw_(yaw), acceleration_(acceleration){
   }
 
   /**
@@ -80,7 +80,7 @@ class Vehicle {
    * @param time Time for prediction. In seconds
    * @return predicted s position of the vehicle
    */
-  double PredictLongitudinalPosition(uint16_t time);
+  double PredictLongitudinalPosition(const double time) const;
 
   /**
    * Returns a true if a vehicle is found in ego lane and is located ahead/behind ego vehicle.

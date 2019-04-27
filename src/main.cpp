@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <utility>
+#include <limits>
 #include <math.h>
 
 #include "Eigen/Core"
@@ -22,7 +23,7 @@ const double kMaxS = 6945.554; // The max s value before wrapping around the tra
 const uint8_t kTotalLanes = 3;
 const uint8_t kStartLane = 1; //start counting from 0 t(left most lane)
 static const double kReferenceVelocity = 49.5; //mph
-static const double kSafeDistanceToSpeedRatio = 0.5;
+static const double kSafeDistanceToSpeedRatio = 0.3;
 static const double kMphToMpsRatio = 2.24;
 const uint8_t kTotalTrajectoryPoints = 50;
 const uint8_t kTotalTrajectoryAnchorPoints = 5;
@@ -31,17 +32,16 @@ const uint8_t kLaneWidth = 4; // in meters
 static const double kCarPositionRefreshTime = 0.02; // in seconds
 static const double kDecelerationConformLimit = 5; // in m/s2
 static const double kAccelerationConformLimit = 9; // in m/s2
+constexpr std::uint8_t kEgoVehicleId = std::numeric_limits<std::uint8_t>::max();
 
 json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& context,
   double& target_ego_velocity, std::uint8_t& ego_lane){
 
   // Ego localization Data
-  double car_x = telemetry_data["x"];
-  double car_y = telemetry_data["y"];
-  double car_s = telemetry_data["s"];
-  double car_d = telemetry_data["d"];
-  double car_yaw = telemetry_data["yaw"];
-  double car_speed = telemetry_data["speed"];
+  Vehicle ego_vehicle(std::make_shared<DrivingContext>(context), kEgoVehicleId, kStartLane,
+                      (double) telemetry_data["x"], (double) telemetry_data["y"],
+                      (double) telemetry_data["speed"], (double) telemetry_data["s"],
+                      (double) telemetry_data["d"], telemetry_data["yaw"]);
 
   // Previous path data given to the Planner
   auto previous_path_x = telemetry_data["previous_path_x"];
@@ -65,18 +65,20 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& con
 
   const std::size_t previous_path_size = previous_path_x.size();
   if(previous_path_size > 0) {
-    car_x = end_path_s;
+    ego_vehicle.s_ = end_path_s;
   }
   bool slow_car_ahead = false;
+
   for (const Vehicle vehilce : other_vehicles){
     if (ego_lane == vehilce.lane_index_){  //check whether detected car is in our lane
 
-      double detected_car_s = vehilce.s_;
       // project longitudinal position of detected car into the future:
       // where detected car would be if ego car position would evolve to the last point of previous path
-      detected_car_s+=(double)previous_path_size * context.ego_postion_refresh_interval_ * vehilce.velocity_;
-      if((detected_car_s > car_s) && ((detected_car_s - car_s) <
-        target_ego_velocity * context.safe_distance_to_speed_ratio_ * kMphToMpsRatio)) {
+      double detected_car_s_predicted = vehilce.PredictLongitudinalPosition(
+        static_cast<double>(previous_path_size) * context.ego_postion_refresh_interval_);
+
+       if((detected_car_s_predicted > ego_vehicle.s_) &&
+         ((detected_car_s_predicted - ego_vehicle.s_) < target_ego_velocity * context.safe_distance_to_speed_ratio_ * kMphToMpsRatio)) {
         // if detected car is in front of ego and is too close
         slow_car_ahead = true;
       }
@@ -100,9 +102,9 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& con
   // KEEP LANE WITH SAME SPEED
 
   // build smooth trajectory using points from previous path
-  double ref_x = car_x;
-  double ref_y = car_y;
-  double ref_yaw = deg2rad(car_yaw);
+  double ref_x = ego_vehicle.x_;
+  double ref_y = ego_vehicle.y_;
+  double ref_yaw = deg2rad(ego_vehicle.yaw_);
 
   vector<double> anchor_points_x;
   vector<double> anchor_points_y;
@@ -110,15 +112,15 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& con
   if(previous_path_size < 2) { //if previous path is almost empty use ccp as start point
 
     // calculate previous waypoints using current car yaw
-    double previous_car_x = car_x - cos(car_yaw);
-    double previous_car_y = car_y - sin(car_yaw);
+    double previous_car_x = ego_vehicle.x_ - cos(ego_vehicle.yaw_);
+    double previous_car_y = ego_vehicle.y_ - sin(ego_vehicle.yaw_);
 
     // use two last  waypoints from previous path for interpolation to make transition smoother
     anchor_points_x.push_back(previous_car_x);
-    anchor_points_x.push_back(car_x);
+    anchor_points_x.push_back(ego_vehicle.x_);
 
     anchor_points_y.push_back(previous_car_y);
-    anchor_points_y.push_back(car_y);
+    anchor_points_y.push_back(ego_vehicle.y_);
 
   } else { // otherwise use last point of previous path as reference waypoint
 
@@ -140,7 +142,7 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& con
   for (int i = 0; i < kTotalTrajectoryAnchorPoints; i++) {
 
     std::pair<double, double> next_key_point =
-      getXY(car_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
+      getXY(ego_vehicle.s_ + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
         context.lane_width_/2 + context.lane_width_ * ego_lane,
         context.map_waypoints_s_, context.map_waypoints_x_, context.map_waypoints_y_);
     anchor_points_x.push_back(next_key_point.first);
