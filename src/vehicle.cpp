@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <limits>
+#include <iostream>
 
 using std::string;
 using std::vector;
@@ -68,7 +69,7 @@ vector<State> Vehicle::GetFeasibleSuccessorStates(const vector<Vehicle> &predict
 DrivingState Vehicle::CreateDrivingState(const State& target_state, const vector<Vehicle>& predictions) {
   // Given a possible next state, generate the appropriate trajectory to realize  the next state.
   switch (target_state) {
-    case State::CONSTANT_PEED:
+    case State::CONSTANT_SPEED:
       return CreateConstantSpeedState();
     case State::KEEP_LANE:
       return CreateKeepLaneState(predictions);
@@ -86,31 +87,39 @@ DrivingState Vehicle::CreateDrivingState(const State& target_state, const vector
 DrivingKinematics Vehicle::CalculateVehilceKinematics(
     const vector<Vehicle>& predictions, const uint8_t target_lane_index, const uint16_t time) {
 
-  double max_velocity_accel_limit = driving_context_->max_accceleration_ + velocity_;
+  double max_velocity_increment = driving_context_->max_accceleration_*time + velocity_;
   double predicted_position;
   double new_velocity;
   double new_acceleration;
   std::shared_ptr<Vehicle> vehicle_ahead = nullptr;
   std::shared_ptr<Vehicle> vehicle_behind = nullptr;
 
+  std::cout << "Calculating ego vehilce kinematics...";
   if (GetClosestVehicleInLane(target_lane_index, predictions, true, vehicle_ahead)) {
+    std::cout << "Vehicle ahead in ego lane in " << (int)(vehicle_ahead->s_ - this->s_) <<"m" <<std::endl;
     if (GetClosestVehicleInLane(target_lane_index, predictions, false, vehicle_behind)) {
+      std::cout << "Vehicle behind in ego lane in " << (int)(vehicle_ahead->s_ - this->s_) <<"m" <<std::endl;
       // must travel at the speed of traffic, regardless of preferred buffer
       new_velocity = vehicle_ahead->velocity_;
     } else {
       double max_velocity_in_front = (vehicle_ahead->s_ - this->s_
                                   - kPreferredBuffer) + vehicle_ahead->velocity_
                                   - 0.5 * (acceleration_);
+      std::cout << "Max velocity in front: " << max_velocity_in_front <<"m/s" <<std::endl;
       new_velocity = std::min(std::min(max_velocity_in_front,
-                                       max_velocity_accel_limit),
+                                       max_velocity_increment),
                                        driving_context_->max_speed_);
     }
   } else {
-    new_velocity = std::min(max_velocity_accel_limit, driving_context_->max_speed_);
+    new_velocity = std::min(max_velocity_increment, driving_context_->max_speed_);
   }
+  std::cout << "New ego vehicle velocity: " << new_velocity <<"m/s" << std::endl;
 
   new_acceleration = (new_velocity - velocity_)/time; // Equation: (v_1 - v_0)/t = acceleration
+  std::cout << "New ego vehicle acceleration: " << new_acceleration <<"m/s" << std::endl;
+
   predicted_position = s_ + new_velocity * time + new_acceleration * time*time /2.0;
+  std::cout << "Target ego vehicle s poistion: " << predicted_position <<"m" << std::endl;
 
   return {predicted_position, new_velocity, new_acceleration};
 }
@@ -208,7 +217,7 @@ double Vehicle::PredictLongitudinalPosition(const double time) const{
 }
 
 bool Vehicle::GetClosestVehicleInLane(const uint8_t lane_index,
-  const vector<Vehicle>& predictions, const bool is_ahead_of_ego, std::shared_ptr<Vehicle> detected_vehicle) {
+  const vector<Vehicle>& predictions, const bool is_ahead_of_ego, std::shared_ptr<Vehicle>& detected_vehicle) {
 
   bool ego_lane_vehicle_detected = false;
 
@@ -217,18 +226,20 @@ bool Vehicle::GetClosestVehicleInLane(const uint8_t lane_index,
   // Need some smart handling of this corner case
   double closest_vehicle_s = is_ahead_of_ego ? std::numeric_limits<double>::max() : 0;
 
+
   for (Vehicle vehicle : predictions) {
+
 
     bool is_in_ego_lane = (vehicle.lane_index_ == this->lane_index_);
     bool is_longitudinal_position_correct = is_ahead_of_ego ?
-      vehicle.s_ >= this->s_ && vehicle.s_ < closest_vehicle_s :
-      vehicle.s_ < this->s_ && vehicle.s_ > closest_vehicle_s;
+      (vehicle.s_ >= this->s_) && (vehicle.s_ < closest_vehicle_s ) :
+      (vehicle.s_ < this->s_) && (vehicle.s_ > closest_vehicle_s);
 
 
     if (is_in_ego_lane && is_longitudinal_position_correct) {
 
       closest_vehicle_s = vehicle.s_;
-      detected_vehicle = std::make_shared<Vehicle>(vehicle);
+      detected_vehicle = std::make_shared<Vehicle>(std::move(vehicle));
       ego_lane_vehicle_detected = true;
     }
   }

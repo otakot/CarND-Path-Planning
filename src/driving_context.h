@@ -10,7 +10,7 @@ struct DrivingContext {
 
   std::uint8_t total_lanes_;
   double lane_width_; // in meters
-  double max_speed_; // in meters per second
+  double max_speed_; // in mps
   double ego_postion_refresh_interval_; // in seconds
   double safe_distance_to_speed_ratio_;
   double max_deceleration_ ; // in m/s2

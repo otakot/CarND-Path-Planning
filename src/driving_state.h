@@ -2,9 +2,10 @@
 #define DRIVING_STATE_H
 
 #include <utility>
+#include <cstdint>
 
 enum class State {
-  CONSTANT_PEED, //initial state
+  CONSTANT_SPEED, //initial state
   KEEP_LANE,
   PREP_LANE_CHANGE_LEFT,
   LANE_CHANGE_LEFT,
@@ -15,11 +16,11 @@ enum class State {
 struct DrivingKinematics {
   double s; // in meters
   double velocity; // in m/s
-  double acceleration;
+  double acceleration; // in m/s2
 };
 
 struct DrivingState {
-  int lane_index;
+  std::uint8_t lane_index; // not sure about initial lane index
   DrivingKinematics kinematics;
   State state;
 };

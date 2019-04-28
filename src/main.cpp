@@ -2,6 +2,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <memory>
 #include <utility>
 #include <limits>
 #include <math.h>
@@ -12,6 +13,7 @@
 #include "spline.h"
 #include "vehicle.h"
 #include "driving_context.h"
+#include "driving_state.h"
 #include "utilities.h"
 
 using nlohmann::json;
@@ -23,25 +25,27 @@ const double kMaxS = 6945.554; // The max s value before wrapping around the tra
 const uint8_t kTotalLanes = 3;
 const uint8_t kStartLane = 1; //start counting from 0 t(left most lane)
 static const double kReferenceVelocity = 49.5; //mph
-static const double kSafeDistanceToSpeedRatio = 0.3;
-static const double kMphToMpsRatio = 2.24;
+static const double kSafeDistanceToSpeedRatio = 1.5;
+static const double kMpsToMphRatio = 2.23694;
 const uint8_t kTotalTrajectoryPoints = 50;
 const uint8_t kTotalTrajectoryAnchorPoints = 5;
 const uint8_t kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
 const uint8_t kLaneWidth = 4; // in meters
 static const double kCarPositionRefreshTime = 0.02; // in seconds
-static const double kDecelerationConformLimit = 5; // in m/s2
+static const double kDecelerationConformLimit = 9; // in m/s2
 static const double kAccelerationConformLimit = 9; // in m/s2
 constexpr std::uint8_t kEgoVehicleId = std::numeric_limits<std::uint8_t>::max();
 
-json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& context,
-  double& target_ego_velocity, std::uint8_t& ego_lane){
+json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const json& telemetry_data,
+                          Vehicle& ego_vehicle, DrivingState& target_driving_state){
 
-  // Ego localization Data
-  Vehicle ego_vehicle(std::make_shared<DrivingContext>(context), kEgoVehicleId, kStartLane,
-                      (double) telemetry_data["x"], (double) telemetry_data["y"],
-                      (double) telemetry_data["speed"], (double) telemetry_data["s"],
-                      (double) telemetry_data["d"], telemetry_data["yaw"]);
+  // Update ego vehicle driving parameters using the sensor data received from simulator
+  ego_vehicle.x_ = (double) telemetry_data["x"];
+  ego_vehicle.y_ = (double) telemetry_data["y"];
+  ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;
+  ego_vehicle.s_ = (double) telemetry_data["s"];
+  ego_vehicle.d_ = (double) telemetry_data["d"];
+  ego_vehicle.yaw_ = telemetry_data["yaw"];
 
   // Previous path data given to the Planner
   auto previous_path_x = telemetry_data["previous_path_x"];
@@ -58,44 +62,38 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& con
   vector<Vehicle> other_vehicles;
   other_vehicles.reserve(sensor_fusion.size());
   for (const json vehicle_data : sensor_fusion) {
-    other_vehicles.push_back(CreateVehicle(std::make_shared<DrivingContext>(context), vehicle_data));
+    other_vehicles.push_back(CreateVehicle(context, vehicle_data));
   }
 
   // DEFINE SAFE SPEED FOR CURRENT CAR MOVE
 
   const std::size_t previous_path_size = previous_path_x.size();
-  if(previous_path_size > 0) {
-    ego_vehicle.s_ = end_path_s;
-  }
-  bool slow_car_ahead = false;
 
-  for (const Vehicle vehilce : other_vehicles){
-    if (ego_lane == vehilce.lane_index_){  //check whether detected car is in our lane
+  bool slow_vehicle_ahead = false;
 
-      // project longitudinal position of detected car into the future:
-      // where detected car would be if ego car position would evolve to the last point of previous path
-      double detected_car_s_predicted = vehilce.PredictLongitudinalPosition(
-        static_cast<double>(previous_path_size) * context.ego_postion_refresh_interval_);
-
-       if((detected_car_s_predicted > ego_vehicle.s_) &&
-         ((detected_car_s_predicted - ego_vehicle.s_) < target_ego_velocity * context.safe_distance_to_speed_ratio_ * kMphToMpsRatio)) {
-        // if detected car is in front of ego and is too close
-        slow_car_ahead = true;
-      }
+  std::shared_ptr<Vehicle> vehicle_ahead;
+  if(ego_vehicle.GetClosestVehicleInLane(ego_vehicle.lane_index_, other_vehicles, true, vehicle_ahead)){
+    std::cout << "Vehicle ahead in ego lane in " << (int)(vehicle_ahead->s_ - ego_vehicle.s_) <<"m" <<std::endl;
+    if ((vehicle_ahead->s_ - ego_vehicle.s_) <  target_driving_state.kinematics.velocity * context->safe_distance_to_speed_ratio_){
+        std::cout << "Slow vehicle ahead detected!" <<std::endl;
+        slow_vehicle_ahead = true;
     }
   }
 
+
   // adapt the ego speed smoothly to prevent max acceleration/deceleration exceed
-  if(slow_car_ahead) {
+  if(slow_vehicle_ahead) {
     //  change lane if possible
     //if (LaneChangeFeasable()) {
       // ChangeLane();
     //} else { // or decrease the speed and wait for opportunity to change lane
-      target_ego_velocity-= context.ego_postion_refresh_interval_ * context.max_deceleration_ * kMphToMpsRatio;
+      target_driving_state.kinematics.velocity-=
+        context->ego_postion_refresh_interval_ * context->max_deceleration_;
       // PrepareForLaneChange();
     //}
-  } else if (target_ego_velocity < context.max_speed_) {
-    target_ego_velocity+= context.ego_postion_refresh_interval_ * context.max_accceleration_ * kMphToMpsRatio;
+  } else if (target_driving_state.kinematics.velocity < context->max_speed_) {
+    target_driving_state.kinematics.velocity+=
+      context->ego_postion_refresh_interval_ * context->max_accceleration_;
   }
 
 
@@ -138,13 +136,17 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& con
     anchor_points_y.push_back(ref_y);
   }
 
+  // set the starting point of new trajectory generation to last point of previous trajectory
+  // since all previous points are just inherited by new trajectory
+  double new_trajectory_points_start_s = (previous_path_size > 0) ? end_path_s : ego_vehicle.s_;
+
   // generate key points of new trajectory (to interpolate through them later)
   for (int i = 0; i < kTotalTrajectoryAnchorPoints; i++) {
 
     std::pair<double, double> next_key_point =
-      getXY(ego_vehicle.s_ + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
-        context.lane_width_/2 + context.lane_width_ * ego_lane,
-        context.map_waypoints_s_, context.map_waypoints_x_, context.map_waypoints_y_);
+      getXY(new_trajectory_points_start_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
+        context->lane_width_/2 + context->lane_width_ * ego_vehicle.lane_index_,
+        context->map_waypoints_s_, context->map_waypoints_x_, context->map_waypoints_y_);
     anchor_points_x.push_back(next_key_point.first);
     anchor_points_y.push_back(next_key_point.second);
 
@@ -179,7 +181,7 @@ json ProcessTelemetryData(const json& telemetry_data, const DrivingContext&& con
   double target_y = trajectory_spline(target_x);
   const double target_dist = sqrt(target_x*target_x + target_y*target_y);
   const double total_segments = target_dist /
-    (context.ego_postion_refresh_interval_ * target_ego_velocity / kMphToMpsRatio);
+    (context->ego_postion_refresh_interval_ * target_driving_state.kinematics.velocity);
 
 
   //fill in the rest of trajectory points
@@ -221,24 +223,17 @@ int main() {
     map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
 
   // create driving environment context
-  DrivingContext context{kTotalLanes, kLaneWidth, kReferenceVelocity, kCarPositionRefreshTime,
+  DrivingContext context{kTotalLanes, kLaneWidth, kReferenceVelocity/kMpsToMphRatio, kCarPositionRefreshTime,
     kSafeDistanceToSpeedRatio, kDecelerationConformLimit, kAccelerationConformLimit, std::move(map_waypoints_x),
     std::move(map_waypoints_y),std::move(map_waypoints_s), std::move(map_waypoints_dx), std::move(map_waypoints_dy)};
 
-  // initial ego configuration
-  std::uint8_t ego_lane = kStartLane;
-  double target_ego_velocity = 0; // in m/s. we start smoothly to prevent max acceleration exceed
-
-  // create instance of ego vehile and configure it with initial settings
-  //  Vehicle ego = Vehicle(lane_num, s, this->lane_speeds[lane_num], 0);
-  //  ego.configure(config_data);
-  //  ego.state = "KL";
-
+  // create instance of ego vehicle and configure it with initial settings
+  Vehicle ego_vehicle(std::make_shared<DrivingContext>(context), kEgoVehicleId, kStartLane, 0, 0, 0, 0, 0);
+  DrivingState target_driving_state{kStartLane, {.0, .0, .0}, State::KEEP_LANE};
 
   uWS::Hub web_socket_hub;
-  web_socket_hub.onMessage([&context, &target_ego_velocity, &ego_lane]
-              (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
-               uWS::OpCode opCode) {
+  web_socket_hub.onMessage([&context, &ego_vehicle, &target_driving_state]
+              (uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -252,7 +247,8 @@ int main() {
         
         if (event == "telemetry") {
           // j[1] is the telemetry data JSON object
-          json msgJson = ProcessTelemetryData(j[1], std::move(context), target_ego_velocity, ego_lane);
+          json msgJson = ProcessTelemetryData(
+            std::make_shared<DrivingContext>(context), j[1], ego_vehicle, target_driving_state);
 
           auto msg = "42[\"control\","+ msgJson.dump()+"]";
 

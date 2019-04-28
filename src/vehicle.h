@@ -14,7 +14,7 @@ class Vehicle {
  public:
   // Constructors
 
-  Vehicle(std::shared_ptr<DrivingContext> driving_context, uint8_t id, uint8_t lane_index, double x, double y,
+  Vehicle(const std::shared_ptr<DrivingContext> driving_context, uint8_t id, uint8_t lane_index, double x, double y,
     double velocity, double s, double d, double yaw=.0, double acceleration=.0) : driving_context_(driving_context), id_(id),
     lane_index_(lane_index), x_(x), y_(y), velocity_(velocity), s_(s),d_(d), yaw_(yaw), acceleration_(acceleration){
   }
@@ -46,7 +46,8 @@ class Vehicle {
    */
   vector<State> GetFeasibleSuccessorStates(const vector<Vehicle> &predictions);
 
-  bool IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions);
+  bool IsLaneChangeLeftPossible(const vector<Vehicle>& predictions);
+  bool IsLaneChangeRightPossible(const vector<Vehicle>& predictions);
 
   DrivingState CreateDrivingState(const State& target_state, const vector<Vehicle>& predictions);
 
@@ -91,20 +92,22 @@ class Vehicle {
    * @param [in] ahead_of_ego Boolean flag indicating whether the detection should happen head or behind the ego car
    * @param [out] detected_vehicle Pointer to detected vehicle
    */
-  bool GetClosestVehicleInLane(const uint8_t lane_index,
-    const vector<Vehicle>& predictions, const bool is_ahead_of_ego, std::shared_ptr<Vehicle> detected_vehicle);
+ bool GetClosestVehicleInLane(const uint8_t lane_index,
+  const vector<Vehicle>& predictions, const bool is_ahead_of_ego, std::shared_ptr<Vehicle>& detected_vehicle);
 
+private:
+  bool IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions);
 
   //void ApplyTargetState(const DrivingState &target_state);
 
-
+public:
   struct collider{
     bool collision; // is there a collision?
     int  time; // time collision happens
   };
 
   const std::map<State, int> lane_index_change =
-    {{State::CONSTANT_PEED, 0},
+    {{State::CONSTANT_SPEED, 0},
     {State::KEEP_LANE, 0},
     {State::PREP_LANE_CHANGE_LEFT, 0},
     {State::LANE_CHANGE_LEFT, -1},
@@ -117,9 +120,9 @@ class Vehicle {
 
   uint8_t id_, lane_index_;
 
-  double x_, y_, yaw_, velocity_, s_, d_, acceleration_;
+  double x_, y_, velocity_, s_, d_, yaw_, acceleration_;
 
-  State state_= State::CONSTANT_PEED;
+  State state_= State::CONSTANT_SPEED;
 
   std::shared_ptr<DrivingContext> driving_context_;
 };
