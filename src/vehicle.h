@@ -14,9 +14,10 @@ class Vehicle {
  public:
   // Constructors
 
-  Vehicle(const std::shared_ptr<DrivingContext> driving_context, uint8_t id, uint8_t lane_index, double x, double y,
-    double velocity, double s, double d, double yaw=.0, double acceleration=.0, State state= State::KEEP_LANE) : driving_context_(driving_context), id_(id),
-    lane_index_(lane_index), x_(x), y_(y), velocity_(velocity), s_(s),d_(d), yaw_(yaw), acceleration_(acceleration), state_(state){
+  Vehicle(const std::shared_ptr<DrivingContext> driving_context, uint8_t id, uint8_t lane_index, double x,
+    double y,double velocity, double s, double d, double yaw=.0, double acceleration=.0,
+    State state= State::KEEP_LANE) : driving_context_(driving_context), id_(id), lane_index_(lane_index),
+    x_(x), y_(y), velocity_(velocity), s_(s),d_(d), yaw_(yaw), acceleration_(acceleration), state_(state){
   }
 
   /**

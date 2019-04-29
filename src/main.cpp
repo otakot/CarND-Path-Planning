@@ -20,6 +20,7 @@
 using nlohmann::json;
 using std::string;
 using std::vector;
+using std::pair;
 
 const string kTrackMapFilePath = "../data/highway_map.csv";  // Waypoint map to read from
 const double kMaxS = 6945.554; // The max s value before wrapping around the track back to 0
@@ -36,67 +37,22 @@ static const double kDecelerationConformLimit = 9; // in m/s2
 static const double kAccelerationConformLimit = 9; // in m/s2
 constexpr std::uint8_t kEgoVehicleId = std::numeric_limits<std::uint8_t>::max();
 
-json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const json& telemetry_data,
-                          Vehicle& ego_vehicle, DrivingState& target_driving_state){
+pair<vector<double>, vector<double>> CalculateDrivingTrajectory(const DrivingContext& driving_context,
+  const Vehicle& ego_vehicle, const vector<pair<double, double>>& remaining_previous_trajectory,
+  const double& remaining_previous_trajectory_end_s, const DrivingState& target_driving_state){
 
-  // Update ego vehicle driving parameters using the sensor data received from simulator
-  ego_vehicle.x_ = (double) telemetry_data["x"];
-  ego_vehicle.y_ = (double) telemetry_data["y"];
-
-  // ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;
-
-  // handling of weird issue of not matching the calculated ego velocity to ego velocity received from simulator
-  // we assume that ego velocity  was set in simulator in previous step to provided target velocity
-  ego_vehicle.velocity_ = target_driving_state.kinematics.velocity;
-
-
-  ego_vehicle.s_ = (double) telemetry_data["s"];
-  ego_vehicle.d_ = (double) telemetry_data["d"];
-  ego_vehicle.yaw_ = telemetry_data["yaw"];
-
-  std::cout << "Ego params: " << LogVehilceDrivingParams(ego_vehicle) << std::endl;
-
-  // Previous path data given to the Planner
-  auto previous_path_x = telemetry_data["previous_path_x"];
-  auto previous_path_y = telemetry_data["previous_path_y"];
-
-  // Previous path's end s and d values
-  double end_path_s = telemetry_data["end_path_s"];
-  double end_path_d = telemetry_data["end_path_d"];
-
-  // Sensor Fusion Data, contains information about other cars on the road.
-  auto sensor_fusion = telemetry_data["sensor_fusion"];
-
-  // generate a list of all other cars on the same side of the road.
-  vector<Vehicle> other_vehicles;
-  other_vehicles.reserve(sensor_fusion.size());
-  for (const json vehicle_data : sensor_fusion) {
-    other_vehicles.push_back(CreateVehicle(context, vehicle_data));
-  }
-
-
-  // TARGET DRIVING STATE CALCULATION
-
-  target_driving_state = ego_vehicle.CalculateNextOptimalDrivingState(other_vehicles);
-
-
-
-  // DEFINE SAFE SPEED FOR CURRENT CAR MOVE
-
-
-
-  // KEEP LANE WITH SAME SPEED
 
   // build smooth trajectory using points from previous path
   double ref_x = ego_vehicle.x_;
   double ref_y = ego_vehicle.y_;
   double ref_yaw = deg2rad(ego_vehicle.yaw_);
 
+  // anchor points for generating new trajectory through
   vector<double> anchor_points_x;
   vector<double> anchor_points_y;
 
-  const std::size_t previous_path_size = previous_path_x.size();
-  if(previous_path_size < 2) { //if previous path is almost empty use ccp as start point
+  const std::size_t previous_trajectory_size = remaining_previous_trajectory.size();
+  if(previous_trajectory_size < 2) { //if previous path is almost empty use ccp as start point
 
     // calculate previous waypoints using current car yaw
     double previous_car_x = ego_vehicle.x_ - cos(ego_vehicle.yaw_);
@@ -111,10 +67,10 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
 
   } else { // otherwise use last point of previous path as reference waypoint
 
-    ref_x = previous_path_x[previous_path_size - 1];
-    ref_y = previous_path_y[previous_path_size - 1];
-    double ref_x_previous = previous_path_x[previous_path_size - 2];
-    double ref_y_previous = previous_path_y[previous_path_size - 2];
+    ref_x = remaining_previous_trajectory[previous_trajectory_size - 1].first;
+    ref_y = remaining_previous_trajectory[previous_trajectory_size - 1].second;
+    double ref_x_previous = remaining_previous_trajectory[previous_trajectory_size - 2].first;
+    double ref_y_previous = remaining_previous_trajectory[previous_trajectory_size - 2].second;
     ref_yaw = atan2(ref_y - ref_y_previous, ref_x - ref_x_previous);
 
     // use two last  waypoints from previous path for interpolation to make transition smoother
@@ -127,15 +83,16 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
 
   // set the starting point of new trajectory generation to last point of previous trajectory
   // since all previous points are just inherited by new trajectory
-  double new_trajectory_points_start_s = (previous_path_size > 0) ? end_path_s : ego_vehicle.s_;
+  double new_trajectory_points_start_s = (previous_trajectory_size > 0) ?
+    remaining_previous_trajectory_end_s : ego_vehicle.s_;
 
   // generate key points of new trajectory (to interpolate through them later)
   for (int i = 0; i < kTotalTrajectoryAnchorPoints; i++) {
 
-    std::pair<double, double> next_key_point =
+    pair<double, double> next_key_point =
       getXY(new_trajectory_points_start_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
-        context->lane_width_/2 + context->lane_width_ * ego_vehicle.lane_index_,
-        context->map_waypoints_s_, context->map_waypoints_x_, context->map_waypoints_y_);
+        GetLaneCenterLineD(target_driving_state.lane_index, driving_context.lane_width_),
+        driving_context.map_waypoints_s_, driving_context.map_waypoints_x_, driving_context.map_waypoints_y_);
     anchor_points_x.push_back(next_key_point.first);
     anchor_points_y.push_back(next_key_point.second);
 
@@ -159,9 +116,9 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
   vector<double> trajectory_y;
 
   // use remaining waypoints from previous trajectory as part of new trajectory
-  for (int i = 0; i < previous_path_size; i++){
-    trajectory_x.push_back(previous_path_x[i]);
-    trajectory_y.push_back(previous_path_y[i]);
+  for (int i = 0; i < previous_trajectory_size; i++){
+    trajectory_x.push_back(remaining_previous_trajectory[i].first);
+    trajectory_y.push_back(remaining_previous_trajectory[i].second);
   }
 
   // calculate trajectory points by breaking down the distance between anchor points into segments on the spline
@@ -170,12 +127,12 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
   double target_y = trajectory_spline(target_x);
   const double target_dist = sqrt(target_x*target_x + target_y*target_y);
   const double total_segments = target_dist /
-    (context->ego_postion_refresh_interval_ * target_driving_state.kinematics.velocity);
+    (driving_context.ego_postion_refresh_interval_ * target_driving_state.kinematics.velocity);
 
 
   //fill in the rest of trajectory points
   double updated_x = 0;
-  for (int i = 0; i < (kTotalTrajectoryPoints - previous_path_size); i++) {
+  for (int i = 0; i < (kTotalTrajectoryPoints - remaining_previous_trajectory.size()); i++) {
     double point_x = updated_x + target_dist / total_segments;
     double point_y = trajectory_spline(point_x);
 
@@ -197,10 +154,56 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
 
   }
 
+  return std::make_pair(trajectory_x,trajectory_y);
+}
+
+
+
+json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const json& telemetry_data,
+                          Vehicle& ego_vehicle, DrivingState& target_driving_state){
+
+  // Update ego vehicle driving parameters using the sensor data received from simulator
+  ego_vehicle.x_ = (double) telemetry_data["x"];
+  ego_vehicle.y_ = (double) telemetry_data["y"];
+  ego_vehicle.s_ = (double) telemetry_data["s"];
+  ego_vehicle.d_ = (double) telemetry_data["d"];
+  ego_vehicle.yaw_ = telemetry_data["yaw"];
+
+  // ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;
+
+  // we assume that ego velocity  was set in simulator in previous step to provided target velocity
+  ego_vehicle.velocity_ = target_driving_state.kinematics.velocity;
+
+  std::cout << "Current Ego vehicle driving params: " << LogVehilceDrivingParams(ego_vehicle) << std::endl;
+
+  // Previous path data given to the Planner
+  const vector<pair<double, double>> remaining_previous_trajectory = FetchRemaingPrevousTrajectory(telemetry_data);
+
+  // Previous path's end s and d values
+  double end_path_s = telemetry_data["end_path_s"];
+  double end_path_d = telemetry_data["end_path_d"];
+
+  // Sensor Fusion Data, contains information about other cars on the road.
+  auto sensor_fusion = telemetry_data["sensor_fusion"];
+
+  // generate a list of all other cars on the same side of the road.
+  vector<Vehicle> other_vehicles;
+  other_vehicles.reserve(sensor_fusion.size());
+  for (const json vehicle_data : sensor_fusion) {
+    other_vehicles.push_back(CreateVehicle(context, vehicle_data));
+  }
+
+  // calculate optimal driving state for next cycle
+  target_driving_state = ego_vehicle.CalculateNextOptimalDrivingState(other_vehicles);
+
+  // generate optimal trajectory for target state
+  pair<vector<double>, vector<double>> trajectory = CalculateDrivingTrajectory(
+    *context, ego_vehicle, remaining_previous_trajectory, end_path_s, target_driving_state);
+
   // create and populate the response to be send back to simulator
   json response_message;
-  response_message["next_x"] = trajectory_x;
-  response_message["next_y"] = trajectory_y;
+  response_message["next_x"] = trajectory.first;
+  response_message["next_y"] = trajectory.second;
   return response_message;
 }
 

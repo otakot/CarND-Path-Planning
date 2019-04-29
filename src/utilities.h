@@ -36,34 +36,38 @@ double deg2rad(double x);
 double rad2deg(double x);
 
 // Calculate distance between two points
-double distance(double x1, double y1, double x2, double y2);
+const double distance(double x1, double y1, double x2, double y2);
 
 // Calculate closest waypoint to current x, y position
-int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vector<double> &maps_y);
+const int ClosestWaypoint(double x, double y, const vector<double> &maps_x, const vector<double> &maps_y);
 
 // Returns next waypoint of the closest waypoint
-int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x, 
+const int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
                  const vector<double> &maps_y);
 
 // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
-vector<double> getFrenet(double x, double y, double theta, 
+const std::pair<double,double> getFrenet(double x, double y, double theta,
                          const vector<double> &maps_x, 
                          const vector<double> &maps_y);
 
 // Transform from Frenet s,d coordinates to Cartesian x,y
-std::pair<double, double> getXY(double s, double d, const vector<double> &maps_s,
+const std::pair<double, double> getXY(double s, double d, const vector<double> &maps_s,
                      const vector<double> &maps_x, const vector<double> &maps_y);
 
 bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, float& lane_speed);
+
+const double GetLaneCenterLineD(const uint8_t lane_index, const double& lane_width);
 
 /**
  *  Calculates index of the lane by given valued of D (Frenet coordinates) and lane width information
  *  lane indices start from 0 (left most lane)
  */
-std::uint8_t CalculateLaneIndex(double d, double lane_width);
+const std::uint8_t CalculateLaneIndex(double d, double lane_width);
 
 Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json& sensor_data);
 
 std::string GetStateName(State state);
+
+const vector<std::pair<double, double>> FetchRemaingPrevousTrajectory(const json& telemetry_data);
 
 #endif  // UTILITIES_H

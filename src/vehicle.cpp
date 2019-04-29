@@ -80,8 +80,8 @@ vector<State> Vehicle::GetFeasibleSuccessorStates(const vector<Vehicle> &predict
 }
 
 bool Vehicle::IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions){
-  // check if another vehicle occupies the 'safe lane change' segment of target lane
 
+  // check if another vehicle occupies the 'safe lane change' segment of target lane
   for (Vehicle vehicle : predictions) {
    bool is_in_tagret_lane = (vehicle.lane_index_ == target_lane_index);
    bool is_longitudinally_behind = (this->s_ > vehicle.s_);
@@ -130,7 +130,7 @@ DrivingState Vehicle::CreateConstantSpeedState() {
 
 DrivingState Vehicle::CreateKeepLaneState(const vector<Vehicle>& predictions) {
 
-  // TODO: calculate target position data for longer period of time (e.g 150 m drive) !!!
+  // TODO:  maybe change time interval to bigger one?
   DrivingKinematics kinematics = CalculateVehilceKinematics(
     predictions, lane_index_, driving_context_->ego_postion_refresh_interval_);
   return DrivingState{lane_index_, kinematics, State::KEEP_LANE};
@@ -142,10 +142,10 @@ DrivingState Vehicle::CreatePrepareLaneChangeState(const State& target_state, co
           (target_state == State::PREP_LANE_CHANGE_RIGHT && lane_index_ < driving_context_->total_lanes_));
 
 
-  uint8_t target_lane_index = lane_index_ + ((target_state == State::PREP_LANE_CHANGE_LEFT) ? -1 : 1);
+  const uint8_t target_lane_index = lane_index_ + ((target_state == State::PREP_LANE_CHANGE_LEFT) ? -1 : 1);
 
   // TODO: calculate target position data for longer period of time (e.g 4 seconds) !!!
-  DrivingKinematics ego_lane_kinematics = CalculateVehilceKinematics(
+  const DrivingKinematics ego_lane_kinematics = CalculateVehilceKinematics(
     predictions, lane_index_, driving_context_->ego_postion_refresh_interval_);
 
   std::shared_ptr<Vehicle> detected_vehicle_behind = nullptr;
@@ -156,7 +156,7 @@ DrivingState Vehicle::CreatePrepareLaneChangeState(const State& target_state, co
   } else {
 
      // TODO: calculate target position data to smoothly match proper gap in target lane behind ego!!!
-     // TODO: change time interval to bigger one!!
+     // TODO: maybe change time interval to bigger one?
     DrivingKinematics target_lane_kinematics = CalculateVehilceKinematics(
       predictions, target_lane_index, driving_context_->ego_postion_refresh_interval_);
 
@@ -172,15 +172,14 @@ DrivingState Vehicle::CreatePrepareLaneChangeState(const State& target_state, co
 
 DrivingState Vehicle::CreateLaneChangeState(const State& target_state, const vector<Vehicle> &predictions) {
 
-  // Generate a lane change trajectory.
   assert((target_state == State::LANE_CHANGE_LEFT && lane_index_ > 0 ) ||
           (target_state == State::LANE_CHANGE_RIGHT && lane_index_ < driving_context_->total_lanes_));
 
-  uint8_t target_lane_index = lane_index_ + ((target_state == State::LANE_CHANGE_LEFT) ? -1 : 1);
+  const uint8_t target_lane_index = lane_index_ + ((target_state == State::LANE_CHANGE_LEFT) ? -1 : 1);
 
 
   // TODO: calculate target position data for longer period of time (e.g 150 m drive) !!!
-  DrivingKinematics target_lane_kinematics = CalculateVehilceKinematics(
+  const DrivingKinematics target_lane_kinematics = CalculateVehilceKinematics(
       predictions, target_lane_index, driving_context_->ego_postion_refresh_interval_);
 
   return DrivingState{target_lane_index, target_lane_kinematics, target_state};

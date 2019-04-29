@@ -7,6 +7,7 @@
 #include <string>
 #include <cstdint>
 #include <math.h>
+#include <assert.h>
 
 #include "json.hpp"
 #include "vehicle.h"
@@ -14,6 +15,7 @@
 using std::string;
 using std::vector;
 using nlohmann::json;
+using std::pair;
 
 void LoadRoadMap(const string& map_file, vector<double>& map_waypoints_x, vector<double>& map_waypoints_y,
   vector<double>& map_waypoints_s, vector<double>& map_waypoints_dx, vector<double>& map_waypoints_dy){
@@ -67,12 +69,12 @@ double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
 // Calculate distance between two points
-double distance(double x1, double y1, double x2, double y2) {
+const double distance(double x1, double y1, double x2, double y2) {
   return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 }
 
 // Calculate closest waypoint to current x, y position
-int ClosestWaypoint(double x, double y, const vector<double> &maps_x, 
+const int ClosestWaypoint(double x, double y, const vector<double> &maps_x,
                     const vector<double> &maps_y) {
   double closestLen = 100000; //large number
   int closestWaypoint = 0;
@@ -91,7 +93,7 @@ int ClosestWaypoint(double x, double y, const vector<double> &maps_x,
 }
 
 // Returns next waypoint of the closest waypoint
-int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x, 
+const int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
                  const vector<double> &maps_y) {
   int closestWaypoint = ClosestWaypoint(x,y,maps_x,maps_y);
 
@@ -114,7 +116,7 @@ int NextWaypoint(double x, double y, double theta, const vector<double> &maps_x,
 }
 
 // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
-vector<double> getFrenet(double x, double y, double theta, 
+const pair<double,double> getFrenet(double x, double y, double theta,
                          const vector<double> &maps_x, 
                          const vector<double> &maps_y) {
   int next_wp = NextWaypoint(x,y, theta, maps_x,maps_y);
@@ -159,7 +161,7 @@ vector<double> getFrenet(double x, double y, double theta,
 }
 
 // Transform from Frenet s,d coordinates to Cartesian x,y
-std::pair<double, double> getXY(double s, double d, const vector<double> &maps_s,
+const pair<double, double> getXY(double s, double d, const vector<double> &maps_s,
                      const vector<double> &maps_x, const vector<double> &maps_y) {
   int prev_wp = -1;
 
@@ -198,7 +200,7 @@ bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, 
   return false;
 }
 
-std::uint8_t CalculateLaneIndex(double d, double lane_width) {
+const std::uint8_t CalculateLaneIndex(double d, double lane_width) {
   return d / lane_width;
 }
 
@@ -228,4 +230,23 @@ std::string GetStateName(State state) {
       default:
         throw std::runtime_error("Unsupported state");
   }
+}
+
+const double GetLaneCenterLineD(const uint8_t lane_index, const double& lane_width){
+  return lane_width * lane_index + lane_width / 2;
+}
+
+const vector<pair<double, double>> FetchRemaingPrevousTrajectory(const json& telemetry_data) {
+  json remaining_trajectory_x = telemetry_data["previous_path_x"];
+  json remaining_trajectory_y = telemetry_data["previous_path_y"];
+
+  //make sure that number of x coordinates matches the number of y coordinates
+  assert(remaining_trajectory_x.size() == remaining_trajectory_y.size());
+
+  vector<pair<double, double>> remaining_trajectory;
+  remaining_trajectory.reserve(remaining_trajectory_x.size());
+  for (int i = 0; i < remaining_trajectory_x.size(); i++){
+    remaining_trajectory.push_back(std::make_pair(remaining_trajectory_x[i],remaining_trajectory_y[i]));
+  }
+  return remaining_trajectory;
 }
