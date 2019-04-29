@@ -162,42 +162,25 @@ pair<vector<double>, vector<double>> CalculateDrivingTrajectory(const DrivingCon
 json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const json& telemetry_data,
                           Vehicle& ego_vehicle, DrivingState& target_driving_state){
 
-  // Update ego vehicle driving parameters using the sensor data received from simulator
-  ego_vehicle.x_ = (double) telemetry_data["x"];
-  ego_vehicle.y_ = (double) telemetry_data["y"];
-  ego_vehicle.s_ = (double) telemetry_data["s"];
-  ego_vehicle.d_ = (double) telemetry_data["d"];
-  ego_vehicle.yaw_ = telemetry_data["yaw"];
-
-  // ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;
-
-  // we assume that ego velocity  was set in simulator in previous step to provided target velocity
-  ego_vehicle.velocity_ = target_driving_state.kinematics.velocity;
-
+  // update ego vehicle current driving params with data received from simulator
+  UpdateEgoVehileWithLatestDrivingParams(telemetry_data, target_driving_state, ego_vehicle);
   std::cout << "Current Ego vehicle driving params: " << LogVehilceDrivingParams(ego_vehicle) << std::endl;
 
-  // Previous path data given to the Planner
+  // read remaining (uncovered by ego) part of previous  trajectory from telemetry data
   const vector<pair<double, double>> remaining_previous_trajectory = FetchRemaingPrevousTrajectory(telemetry_data);
 
-  // Previous path's end s and d values
-  double end_path_s = telemetry_data["end_path_s"];
-  double end_path_d = telemetry_data["end_path_d"];
-
-  // Sensor Fusion Data, contains information about other cars on the road.
-  auto sensor_fusion = telemetry_data["sensor_fusion"];
+  // previous trajectory end s and d values
+  const double end_path_s = telemetry_data["end_path_s"];
+  //double end_path_d = telemetry_data["end_path_d"];
 
   // generate a list of all other cars on the same side of the road.
-  vector<Vehicle> other_vehicles;
-  other_vehicles.reserve(sensor_fusion.size());
-  for (const json vehicle_data : sensor_fusion) {
-    other_vehicles.push_back(CreateVehicle(context, vehicle_data));
-  }
+  const vector<Vehicle> other_vehicles = FetchOtherVehicles(context, telemetry_data);
 
   // calculate optimal driving state for next cycle
   target_driving_state = ego_vehicle.CalculateNextOptimalDrivingState(other_vehicles);
 
   // generate optimal trajectory for target state
-  pair<vector<double>, vector<double>> trajectory = CalculateDrivingTrajectory(
+  const pair<vector<double>, vector<double>> trajectory = CalculateDrivingTrajectory(
     *context, ego_vehicle, remaining_previous_trajectory, end_path_s, target_driving_state);
 
   // create and populate the response to be send back to simulator

@@ -64,10 +64,16 @@ const double GetLaneCenterLineD(const uint8_t lane_index, const double& lane_wid
  */
 const std::uint8_t CalculateLaneIndex(double d, double lane_width);
 
-Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json& sensor_data);
+Vehicle CreateVehicle(const std::shared_ptr<DrivingContext>& context, const json& sensor_data);
 
 std::string GetStateName(State state);
 
 const vector<std::pair<double, double>> FetchRemaingPrevousTrajectory(const json& telemetry_data);
+
+const vector<Vehicle> FetchOtherVehicles(
+  const std::shared_ptr<DrivingContext>& context, const json& telemetry_data);
+
+void UpdateEgoVehileWithLatestDrivingParams(const json& telemetry_data,
+  DrivingState& current_driving_state, Vehicle& ego_vehicle);
 
 #endif  // UTILITIES_H

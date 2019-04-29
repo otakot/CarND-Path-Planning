@@ -204,7 +204,7 @@ const std::uint8_t CalculateLaneIndex(double d, double lane_width) {
   return d / lane_width;
 }
 
-Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json& sensor_data){
+Vehicle CreateVehicle(const std::shared_ptr<DrivingContext>& context, const json& sensor_data){
 
   const double x = sensor_data[1];
   const double y = sensor_data[2];
@@ -249,4 +249,35 @@ const vector<pair<double, double>> FetchRemaingPrevousTrajectory(const json& tel
     remaining_trajectory.push_back(std::make_pair(remaining_trajectory_x[i],remaining_trajectory_y[i]));
   }
   return remaining_trajectory;
+}
+
+const vector<Vehicle> FetchOtherVehicles(
+  const std::shared_ptr<DrivingContext>& context, const json& telemetry_data){
+
+  // sensor fusion data, contains information about other cars on the road.
+  const auto sensor_fusion = telemetry_data["sensor_fusion"];
+
+  vector<Vehicle> other_vehicles;
+  other_vehicles.reserve(sensor_fusion.size());
+  for (const json vehicle_data : sensor_fusion) {
+    other_vehicles.push_back(CreateVehicle(context, vehicle_data));
+  }
+  return other_vehicles;
+}
+
+void UpdateEgoVehileWithLatestDrivingParams(const json& telemetry_data,
+  DrivingState& current_driving_state, Vehicle& ego_vehicle){
+
+  // update ego vehicle driving parameters using the telemetry data received from simulator
+  ego_vehicle.x_ = (double) telemetry_data["x"];
+  ego_vehicle.y_ = (double) telemetry_data["y"];
+  ego_vehicle.s_ = (double) telemetry_data["s"];
+  ego_vehicle.d_ = (double) telemetry_data["d"];
+  ego_vehicle.yaw_ = telemetry_data["yaw"];
+
+  // we assume that ego velocity  was set in simulator in previous step to provided target velocity
+  ego_vehicle.velocity_ = current_driving_state.kinematics.velocity;
+
+  // this somehow does not work: resulting speed is way smaller than set into target state in previous step
+  // ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;
 }
