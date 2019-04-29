@@ -1,5 +1,9 @@
 #include "vehicle.h"
 #include "cost.h"
+#include "utilities.h"
+#include "logger.h"
+
+
 
 #include <algorithm>
 #include <iterator>
@@ -8,6 +12,7 @@
 #include <vector>
 #include <limits>
 #include <iostream>
+#include <math.h>
 
 using std::string;
 using std::vector;
@@ -16,22 +21,30 @@ using std::vector;
 DrivingState Vehicle::CalculateNextOptimalDrivingState(const vector<Vehicle>& predictions) {
 
   vector<State> sucessor_states = GetFeasibleSuccessorStates(predictions);
-  float cost;
+
   vector<float> costs;
 
   vector<DrivingState> feasible_next_driving_states;
+  std::cout << "Calculating feasable driving states for transition..."  << std::endl;
   for (const State state_id : sucessor_states) {
+    // generate the driving parameters for feasable state
     const DrivingState possible_driving_state = CreateDrivingState(state_id, predictions);
-    cost = CalculateTargetStateCost(driving_context_, *this, predictions, possible_driving_state);
+
+    // calculate the cost of the sate
+    float cost = CalculateTargetStateCost(driving_context_, *this, predictions, possible_driving_state);
+
+    std::cout << LogDrivingState(possible_driving_state) << ", Cost: "  << cost << std::endl;
+
     costs.push_back(cost);
     feasible_next_driving_states.push_back(possible_driving_state);
   }
 
   vector<float>::iterator best_cost = min_element(begin(costs), end(costs));
-  int best_idx = distance(begin(costs), best_cost);
+  std::uint16_t optimal_state_index = distance(begin(costs), best_cost);
 
-  // TODO: Change return value here:
-  return feasible_next_driving_states[best_idx];
+  DrivingState optimal_next_driving_state = feasible_next_driving_states[optimal_state_index];
+  std::cout << "Target state selected : "  << GetStateName(optimal_next_driving_state.state) << std::endl;
+  return optimal_next_driving_state;
 }
 
 vector<State> Vehicle::GetFeasibleSuccessorStates(const vector<Vehicle> &predictions) {
@@ -66,6 +79,29 @@ vector<State> Vehicle::GetFeasibleSuccessorStates(const vector<Vehicle> &predict
   return states;
 }
 
+bool Vehicle::IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions){
+  // check if another vehicle occupies the 'safe lane change' segment of target lane
+
+  for (Vehicle vehicle : predictions) {
+   bool is_in_tagret_lane = (vehicle.lane_index_ == target_lane_index);
+   bool is_longitudinally_behind = (this->s_ > vehicle.s_);
+
+   //TODO: make safe distance calculation more sofisticated. e.g. based on max comfort deceleration
+   bool is_rear_vehile_too_close = (this->s_ - vehicle.s_)  <
+      vehicle.velocity_ * driving_context_->safe_distance_to_speed_ratio_;
+   bool is_front_vehile_too_close = (vehicle.s_ - this->s_)  <
+      velocity_ * driving_context_->safe_distance_to_speed_ratio_;
+
+    if (is_in_tagret_lane &&
+        ((is_longitudinally_behind && is_rear_vehile_too_close) ||
+         (!is_longitudinally_behind && is_front_vehile_too_close))) {
+      // lane change is not safe
+      return false;
+    }
+  }
+  return true;
+}
+
 DrivingState Vehicle::CreateDrivingState(const State& target_state, const vector<Vehicle>& predictions) {
   // Given a possible next state, generate the appropriate trajectory to realize  the next state.
   switch (target_state) {
@@ -84,52 +120,12 @@ DrivingState Vehicle::CreateDrivingState(const State& target_state, const vector
   }
 }
 
-DrivingKinematics Vehicle::CalculateVehilceKinematics(
-    const vector<Vehicle>& predictions, const uint8_t target_lane_index, const uint16_t time) {
-
-  double max_velocity_increment = driving_context_->max_accceleration_*time + velocity_;
-  double predicted_position;
-  double new_velocity;
-  double new_acceleration;
-  std::shared_ptr<Vehicle> vehicle_ahead = nullptr;
-  std::shared_ptr<Vehicle> vehicle_behind = nullptr;
-
-  std::cout << "Calculating ego vehilce kinematics...";
-  if (GetClosestVehicleInLane(target_lane_index, predictions, true, vehicle_ahead)) {
-    std::cout << "Vehicle ahead in ego lane in " << (int)(vehicle_ahead->s_ - this->s_) <<"m" <<std::endl;
-    if (GetClosestVehicleInLane(target_lane_index, predictions, false, vehicle_behind)) {
-      std::cout << "Vehicle behind in ego lane in " << (int)(vehicle_ahead->s_ - this->s_) <<"m" <<std::endl;
-      // must travel at the speed of traffic, regardless of preferred buffer
-      new_velocity = vehicle_ahead->velocity_;
-    } else {
-      double max_velocity_in_front = (vehicle_ahead->s_ - this->s_
-                                  - kPreferredBuffer) + vehicle_ahead->velocity_
-                                  - 0.5 * (acceleration_);
-      std::cout << "Max velocity in front: " << max_velocity_in_front <<"m/s" <<std::endl;
-      new_velocity = std::min(std::min(max_velocity_in_front,
-                                       max_velocity_increment),
-                                       driving_context_->max_speed_);
-    }
-  } else {
-    new_velocity = std::min(max_velocity_increment, driving_context_->max_speed_);
-  }
-  std::cout << "New ego vehicle velocity: " << new_velocity <<"m/s" << std::endl;
-
-  new_acceleration = (new_velocity - velocity_)/time; // Equation: (v_1 - v_0)/t = acceleration
-  std::cout << "New ego vehicle acceleration: " << new_acceleration <<"m/s" << std::endl;
-
-  predicted_position = s_ + new_velocity * time + new_acceleration * time*time /2.0;
-  std::cout << "Target ego vehicle s poistion: " << predicted_position <<"m" << std::endl;
-
-  return {predicted_position, new_velocity, new_acceleration};
-}
-
 DrivingState Vehicle::CreateConstantSpeedState() {
   // Generate a constant speed trajectory.
 
   // TODO: calculate target position data for longer period of time (e.g 150 m drive) !!!
   double target_s = PredictLongitudinalPosition(1);  // 1sec for now. it's temp solution
-  return DrivingState{this->lane_index_, {target_s, this->velocity_, 0}, this->state_};
+  return DrivingState{lane_index_, {target_s, velocity_, 0}, state_};
 }
 
 DrivingState Vehicle::CreateKeepLaneState(const vector<Vehicle>& predictions) {
@@ -174,28 +170,6 @@ DrivingState Vehicle::CreatePrepareLaneChangeState(const State& target_state, co
   }
 }
 
-
-bool Vehicle::IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions){
-  // check if another vehicle occupies the 'safe lane change' segment of target lane
-
-  for (Vehicle vehicle : predictions) {
-   bool is_in_tagret_lane = (vehicle.lane_index_ == target_lane_index);
-   bool is_longitudinally_behind = (this->s_ > vehicle.s_);
-   bool is_rear_vehile_too_close = (this->s_ - vehicle.s_)  <
-      vehicle.velocity_ * driving_context_->safe_distance_to_speed_ratio_;
-   bool is_front_vehile_too_close = (vehicle.s_ - this->s_)  <
-      velocity_ * driving_context_->safe_distance_to_speed_ratio_;
-
-    if (is_in_tagret_lane &&
-        ((is_longitudinally_behind && is_rear_vehile_too_close) ||
-         (!is_longitudinally_behind && is_front_vehile_too_close))) {
-      // lane change is not safe
-      return false;
-    }
-  }
-  return true;
-}
-
 DrivingState Vehicle::CreateLaneChangeState(const State& target_state, const vector<Vehicle> &predictions) {
 
   // Generate a lane change trajectory.
@@ -212,8 +186,58 @@ DrivingState Vehicle::CreateLaneChangeState(const State& target_state, const vec
   return DrivingState{target_lane_index, target_lane_kinematics, target_state};
 }
 
-double Vehicle::PredictLongitudinalPosition(const double time) const{
-  return s_ + velocity_*time + acceleration_*time*time/2.0;
+DrivingKinematics Vehicle::CalculateVehilceKinematics(
+    const vector<Vehicle>& predictions, const uint8_t target_lane_index, const double time_interval) {
+
+  const double max_velocity_increment =
+    std::min((velocity_ + driving_context_->max_accceleration_*time_interval), driving_context_->max_speed_);
+  const double max_velocity_decrement =
+    std::max(velocity_ - driving_context_->max_deceleration_*time_interval, 0.0) ;
+
+  double predicted_position;
+  double new_velocity;
+  double new_acceleration;
+  std::shared_ptr<Vehicle> vehicle_ahead = nullptr;
+  std::shared_ptr<Vehicle> vehicle_behind = nullptr;
+
+  //std::cout << "Calculating ego vehilce kinematics...";
+  if (GetClosestVehicleInLane(target_lane_index, predictions, true, vehicle_ahead) &&
+      IsVehicleTooClose(*vehicle_ahead)) {
+
+    // std::cout << "Slow Vehicle ahead detected!" <<std::endl;
+    if (GetClosestVehicleInLane(target_lane_index, predictions, false, vehicle_behind) &&
+      IsVehicleTooClose(*vehicle_behind)) {
+      //std::cout << "Vehicle behind in ego lane in " << (int)(vehicle_ahead->s_ - this->s_) <<"m" <<std::endl;
+      // must travel at the speed of traffic, regardless of preferred buffer
+      new_velocity = vehicle_ahead->velocity_;
+    } else {
+
+    // this is weird way of calculation of  target seed. but wil lleave it here for now
+    //      double max_velocity_in_front = (vehicle_ahead->s_ - this->s_
+    //                                  - kPreferredBuffer) + vehicle_ahead->velocity_
+    //                                  - 0.5 * (acceleration_);
+    //      std::cout << "Max velocity in front: " << max_velocity_in_front <<"m/s" <<std::endl;
+    //      new_velocity = std::min(std::min(max_velocity_in_front,
+    //                                       max_velocity_increment),
+    //                                       driving_context_->max_speed_);
+      new_velocity = max_velocity_decrement;
+    }
+  } else {
+    new_velocity = max_velocity_increment;
+  }
+  // std::cout << "Calculated target ego vehicle speed: " << new_velocity * kMpsToMphRatio << "mph" << std::endl;
+
+  new_acceleration = (new_velocity - velocity_)/time_interval; // Equation: (v_1 - v_0)/t = acceleration
+  // std::cout << "Calculated target ego vehicle acceleration: " << new_acceleration << "m/s" << std::endl;
+
+  predicted_position = s_ + new_velocity * time_interval + new_acceleration * time_interval*time_interval / 2.0;
+  //std::cout << "Calculated target ego vehicle s poistion: " << predicted_position <<"m" << std::endl;
+
+  return {predicted_position, new_velocity, new_acceleration};
+}
+
+double Vehicle::PredictLongitudinalPosition(const double time_interval) const{
+  return s_ + velocity_*time_interval + acceleration_*time_interval*time_interval/2.0;
 }
 
 bool Vehicle::GetClosestVehicleInLane(const uint8_t lane_index,
@@ -245,6 +269,12 @@ bool Vehicle::GetClosestVehicleInLane(const uint8_t lane_index,
   }
 
   return ego_lane_vehicle_detected;
+}
+
+bool Vehicle::IsVehicleTooClose(const Vehicle& vehicle) {
+  return std::abs(vehicle.s_ - this->s_) <
+    (vehicle.s_ > this->s_ ? this->velocity_ : vehicle.velocity_) *
+      driving_context_->safe_distance_to_speed_ratio_;
 }
 
 ///**

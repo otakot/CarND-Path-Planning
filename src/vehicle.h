@@ -15,8 +15,8 @@ class Vehicle {
   // Constructors
 
   Vehicle(const std::shared_ptr<DrivingContext> driving_context, uint8_t id, uint8_t lane_index, double x, double y,
-    double velocity, double s, double d, double yaw=.0, double acceleration=.0) : driving_context_(driving_context), id_(id),
-    lane_index_(lane_index), x_(x), y_(y), velocity_(velocity), s_(s),d_(d), yaw_(yaw), acceleration_(acceleration){
+    double velocity, double s, double d, double yaw=.0, double acceleration=.0, State state= State::KEEP_LANE) : driving_context_(driving_context), id_(id),
+    lane_index_(lane_index), x_(x), y_(y), velocity_(velocity), s_(s),d_(d), yaw_(yaw), acceleration_(acceleration), state_(state){
   }
 
   /**
@@ -57,7 +57,7 @@ class Vehicle {
    *   given other vehicle positions and accel/velocity constraints.
    */
   DrivingKinematics CalculateVehilceKinematics(
-    const vector<Vehicle>& predictions, const uint8_t target_lane_index, const uint16_t time);
+    const vector<Vehicle>& predictions, const uint8_t target_lane_index, const double time_interval);
 
   DrivingState CreateConstantSpeedState();
 
@@ -95,6 +95,12 @@ class Vehicle {
  bool GetClosestVehicleInLane(const uint8_t lane_index,
   const vector<Vehicle>& predictions, const bool is_ahead_of_ego, std::shared_ptr<Vehicle>& detected_vehicle);
 
+ /**
+  * Checks whether the given is dangerously close too ego vehicle.
+  * Currently the check is fairly simple safe_distance >=
+  */
+ bool IsVehicleTooClose(const Vehicle& vehicle);
+
 private:
   bool IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions);
 
@@ -122,7 +128,7 @@ public:
 
   double x_, y_, velocity_, s_, d_, yaw_, acceleration_;
 
-  State state_= State::CONSTANT_SPEED;
+  State state_;
 
   std::shared_ptr<DrivingContext> driving_context_;
 };

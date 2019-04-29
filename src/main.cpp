@@ -15,6 +15,7 @@
 #include "driving_context.h"
 #include "driving_state.h"
 #include "utilities.h"
+#include "logger.h"
 
 using nlohmann::json;
 using std::string;
@@ -26,7 +27,6 @@ const uint8_t kTotalLanes = 3;
 const uint8_t kStartLane = 1; //start counting from 0 t(left most lane)
 static const double kReferenceVelocity = 49.5; //mph
 static const double kSafeDistanceToSpeedRatio = 1.5;
-static const double kMpsToMphRatio = 2.23694;
 const uint8_t kTotalTrajectoryPoints = 50;
 const uint8_t kTotalTrajectoryAnchorPoints = 5;
 const uint8_t kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
@@ -42,10 +42,19 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
   // Update ego vehicle driving parameters using the sensor data received from simulator
   ego_vehicle.x_ = (double) telemetry_data["x"];
   ego_vehicle.y_ = (double) telemetry_data["y"];
-  ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;
+
+  // ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;
+
+  // handling of weird issue of not matching the calculated ego velocity to ego velocity received from simulator
+  // we assume that ego velocity  was set in simulator in previous step to provided target velocity
+  ego_vehicle.velocity_ = target_driving_state.kinematics.velocity;
+
+
   ego_vehicle.s_ = (double) telemetry_data["s"];
   ego_vehicle.d_ = (double) telemetry_data["d"];
   ego_vehicle.yaw_ = telemetry_data["yaw"];
+
+  std::cout << "Ego params: " << LogVehilceDrivingParams(ego_vehicle) << std::endl;
 
   // Previous path data given to the Planner
   auto previous_path_x = telemetry_data["previous_path_x"];
@@ -65,36 +74,15 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
     other_vehicles.push_back(CreateVehicle(context, vehicle_data));
   }
 
+
+  // TARGET DRIVING STATE CALCULATION
+
+  target_driving_state = ego_vehicle.CalculateNextOptimalDrivingState(other_vehicles);
+
+
+
   // DEFINE SAFE SPEED FOR CURRENT CAR MOVE
 
-  const std::size_t previous_path_size = previous_path_x.size();
-
-  bool slow_vehicle_ahead = false;
-
-  std::shared_ptr<Vehicle> vehicle_ahead;
-  if(ego_vehicle.GetClosestVehicleInLane(ego_vehicle.lane_index_, other_vehicles, true, vehicle_ahead)){
-    std::cout << "Vehicle ahead in ego lane in " << (int)(vehicle_ahead->s_ - ego_vehicle.s_) <<"m" <<std::endl;
-    if ((vehicle_ahead->s_ - ego_vehicle.s_) <  target_driving_state.kinematics.velocity * context->safe_distance_to_speed_ratio_){
-        std::cout << "Slow vehicle ahead detected!" <<std::endl;
-        slow_vehicle_ahead = true;
-    }
-  }
-
-
-  // adapt the ego speed smoothly to prevent max acceleration/deceleration exceed
-  if(slow_vehicle_ahead) {
-    //  change lane if possible
-    //if (LaneChangeFeasable()) {
-      // ChangeLane();
-    //} else { // or decrease the speed and wait for opportunity to change lane
-      target_driving_state.kinematics.velocity-=
-        context->ego_postion_refresh_interval_ * context->max_deceleration_;
-      // PrepareForLaneChange();
-    //}
-  } else if (target_driving_state.kinematics.velocity < context->max_speed_) {
-    target_driving_state.kinematics.velocity+=
-      context->ego_postion_refresh_interval_ * context->max_accceleration_;
-  }
 
 
   // KEEP LANE WITH SAME SPEED
@@ -107,6 +95,7 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
   vector<double> anchor_points_x;
   vector<double> anchor_points_y;
 
+  const std::size_t previous_path_size = previous_path_x.size();
   if(previous_path_size < 2) { //if previous path is almost empty use ccp as start point
 
     // calculate previous waypoints using current car yaw

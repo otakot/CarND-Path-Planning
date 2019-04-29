@@ -16,6 +16,8 @@ using std::string;
 using std::vector;
 using nlohmann::json;
 
+static const double kMpsToMphRatio = 2.23694;
+
 void LoadRoadMap(const string& map_file, vector<double>& map_waypoints_x, vector<double>& map_waypoints_y,
   vector<double>& map_waypoints_s, vector<double>& map_waypoints_dx, vector<double>& map_waypoints_dy);
 
@@ -61,5 +63,7 @@ bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, 
 std::uint8_t CalculateLaneIndex(double d, double lane_width);
 
 Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json& sensor_data);
+
+std::string GetStateName(State state);
 
 #endif  // UTILITIES_H

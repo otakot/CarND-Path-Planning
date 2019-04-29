@@ -12,6 +12,7 @@ set(SOURCES
     src/vehicle.cpp
     src/cost.cpp
     src/utilities.cpp
+    src/logger.cpp
 )
 
 

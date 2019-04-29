@@ -1,6 +1,3 @@
-#ifndef UTILITIES_H
-#define UTILITIES_H
-
 #include "utilities.h"
 
 #include <fstream>
@@ -219,4 +216,16 @@ Vehicle CreateVehicle(const std::shared_ptr<DrivingContext> context, const json&
   return Vehicle(context, id, lane_index, x, y, velocity, s, d);
 }
 
-#endif  // UTILITIES_H
+std::string GetStateName(State state) {
+  switch(state)
+  {
+      case State::KEEP_LANE  : return "Keep Lane";
+      case State::PREP_LANE_CHANGE_LEFT  : return "Prepare Lane Change Left";
+      case State::LANE_CHANGE_LEFT  : return "Lane Change Left";
+      case State::PREP_LANE_CHANGE_RIGHT  : return "Prepare Lane Change Right";
+      case State::LANE_CHANGE_RIGHT  : return "Lane Change Right";
+      case State::CONSTANT_SPEED  : return "Constant Speed";
+      default:
+        throw std::runtime_error("Unsupported state");
+  }
+}
