@@ -48,7 +48,22 @@ class Vehicle {
    */
   const vector<State> GetFeasibleSuccessorStates(const vector<Vehicle> &predictions) const;
 
+  /**
+   * @brief Generates the driving trajectory for reaching the given target driving state
+   * Trajectory is generated using Spline interpolation. Also not covered waypoints of trajectory
+   * generated in previous step are used as a start waypoints for new generated trajectory to smooth
+   * the transition between previous and new trajectory in case of possible sharp curve
+   *
+   * @return calculated trajectory as list of {x,y} coordinates (in global map coordinates system)
+   */
+  const std::pair<vector<double>, vector<double>> CalculateDrivingTrajectory(
+    const vector<std::pair<double, double>>& remaining_previous_trajectory,
+    const double& remaining_previous_trajectory_end_s, const DrivingState& target_driving_state) const;
+
+private:
+
   bool IsLaneChangeLeftPossible(const vector<Vehicle>& predictions) const;
+
   bool IsLaneChangeRightPossible(const vector<Vehicle>& predictions) const;
 
   const DrivingState CreateDrivingState(
@@ -107,17 +122,15 @@ class Vehicle {
    */
   bool IsVehicleTooClose(const Vehicle& vehicle) const ;
 
-  const std::pair<vector<double>, vector<double>> CalculateDrivingTrajectory(
-    const DrivingContext& driving_context, const Vehicle& ego_vehicle,
-    const vector<std::pair<double, double>>& remaining_previous_trajectory,
-    const double& remaining_previous_trajectory_end_s, const DrivingState& target_driving_state) const;
-
-private:
   bool IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions) const;
 
   //void ApplyTargetState(const DrivingState &target_state);
 
 public:
+
+  const uint8_t kTotalTrajectoryAnchorPoints = 5;
+  const uint8_t kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
+  const uint8_t kTotalTrajectoryPoints = 50;
 
   const std::map<State, int> lane_index_change =
     {{State::CONSTANT_SPEED, 0},

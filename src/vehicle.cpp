@@ -2,10 +2,10 @@
 #include "cost.h"
 #include "utilities.h"
 #include "logger.h"
+#include "spline.h"
 
 #include <algorithm>
 #include <iterator>
-#include <map>
 #include <string>
 #include <vector>
 #include <limits>
@@ -14,6 +14,7 @@
 
 using std::string;
 using std::vector;
+using std::pair;
 
 
 const DrivingState Vehicle::CalculateNextOptimalDrivingState(const vector<Vehicle>& predictions) const {
@@ -275,6 +276,126 @@ bool Vehicle::IsVehicleTooClose(const Vehicle& vehicle) const {
   return std::abs(vehicle.s_ - this->s_) <
     (vehicle.s_ > this->s_ ? this->velocity_ : vehicle.velocity_) *
       driving_context_->safe_distance_to_speed_ratio_;
+}
+
+const pair<vector<double>, vector<double>> Vehicle::CalculateDrivingTrajectory(
+  const vector<pair<double, double>>& remaining_previous_trajectory,
+  const double& remaining_previous_trajectory_end_s, const DrivingState& target_driving_state) const{
+
+
+  // build smooth trajectory using points from previous trajectory
+  double ref_x = x_;
+  double ref_y = y_;
+  double ref_yaw = deg2rad(yaw_);
+
+  // anchor points for generating new trajectory through
+  vector<double> anchor_points_x;
+  vector<double> anchor_points_y;
+
+  const std::size_t previous_trajectory_size = remaining_previous_trajectory.size();
+  if(previous_trajectory_size < 2) { //if previous path is almost empty use ccp as start point
+
+    // calculate previous waypoints using current ego's yaw
+    double previous_ego_position_x = x_ - cos(yaw_);
+    double previous_ego_position_y =y_ - sin(yaw_);
+
+    // use two last waypoints from previous trajectory for interpolation to make transition smoother
+    anchor_points_x.push_back(previous_ego_position_x);
+    anchor_points_x.push_back(x_);
+
+    anchor_points_y.push_back(previous_ego_position_y);
+    anchor_points_y.push_back(y_);
+
+  } else { // otherwise use last point of previous trajectory as reference waypoint
+
+    ref_x = remaining_previous_trajectory[previous_trajectory_size - 1].first;
+    ref_y = remaining_previous_trajectory[previous_trajectory_size - 1].second;
+    double ref_x_previous = remaining_previous_trajectory[previous_trajectory_size - 2].first;
+    double ref_y_previous = remaining_previous_trajectory[previous_trajectory_size - 2].second;
+    ref_yaw = atan2(ref_y - ref_y_previous, ref_x - ref_x_previous);
+
+    // use two last  waypoints from previous path for interpolation to make transition smoother
+    anchor_points_x.push_back(ref_x_previous);
+    anchor_points_x.push_back(ref_x);
+
+    anchor_points_y.push_back(ref_y_previous);
+    anchor_points_y.push_back(ref_y);
+  }
+
+  // set the starting point of new trajectory generation to last point of previous trajectory
+  // since all previous points are just inherited by new trajectory
+  double new_trajectory_points_start_s = (previous_trajectory_size > 0) ?
+    remaining_previous_trajectory_end_s : s_;
+
+  // generate key points of new trajectory (to interpolate through them later)
+  for (int i = 0; i < kTotalTrajectoryAnchorPoints; i++) {
+
+    pair<double, double> next_key_point =
+      getXY(new_trajectory_points_start_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
+        GetLaneCenterLineD(target_driving_state.lane_index, driving_context_->lane_width_),
+         driving_context_->map_waypoints_s_, driving_context_->map_waypoints_x_, driving_context_->map_waypoints_y_);
+    anchor_points_x.push_back(next_key_point.first);
+    anchor_points_y.push_back(next_key_point.second);
+
+  }
+
+  // change reference angle to local coordinates system frame
+  for (int i = 0; i < anchor_points_x.size(); i++) {
+    double shift_x = anchor_points_x[i] - ref_x;
+    double shift_y = anchor_points_y[i] - ref_y;
+
+    anchor_points_x[i] = (shift_x * cos(0-ref_yaw) - shift_y * sin(0-ref_yaw));
+    anchor_points_y[i] = (shift_x * sin(0-ref_yaw) + shift_y * cos(0-ref_yaw));
+  }
+
+  // create spline for interpolation
+  tk::spline trajectory_spline;
+  trajectory_spline.set_points(anchor_points_x, anchor_points_y);
+
+
+  vector<double> trajectory_x;
+  vector<double> trajectory_y;
+
+  // use remaining waypoints from previous trajectory as part of new trajectory
+  for (int i = 0; i < previous_trajectory_size; i++){
+    trajectory_x.push_back(remaining_previous_trajectory[i].first);
+    trajectory_y.push_back(remaining_previous_trajectory[i].second);
+  }
+
+  // calculate trajectory points by breaking down the distance between anchor points into segments on the spline
+  // in the way that ego velocity will not exceed speed limit
+  double target_x = kDistanceBetweenTrajectoryKeyPoints;
+  double target_y = trajectory_spline(target_x);
+  const double target_dist = sqrt(target_x*target_x + target_y*target_y);
+  const double total_segments = target_dist /
+    (driving_context_->ego_postion_refresh_interval_ * target_driving_state.kinematics.velocity);
+
+
+  //fill in the rest of trajectory points
+  double updated_x = 0;
+  for (int i = 0; i < (kTotalTrajectoryPoints - remaining_previous_trajectory.size()); i++) {
+    double point_x = updated_x + target_dist / total_segments;
+    double point_y = trajectory_spline(point_x);
+
+    updated_x = point_x;
+
+    double x_tmp = point_x;
+    double y_tmp = point_y;
+
+    // change reference angle back to global coordinates system frame
+    point_x = x_tmp * cos(ref_yaw) - y_tmp * sin(ref_yaw);
+    point_y = x_tmp * sin(ref_yaw) + y_tmp * cos(ref_yaw);
+
+    point_x+= ref_x;
+    point_y+= ref_y;
+
+
+    trajectory_x.push_back(point_x);
+    trajectory_y.push_back(point_y);
+
+  }
+
+  return std::make_pair(trajectory_x,trajectory_y);
 }
 
 ///**

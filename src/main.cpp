@@ -10,7 +10,6 @@
 #include "Eigen/Core"
 #include "Eigen/QR"
 #include "json.hpp"
-#include "spline.h"
 #include "vehicle.h"
 #include "driving_context.h"
 #include "driving_state.h"
@@ -28,136 +27,11 @@ const uint8_t kTotalLanes = 3;
 const uint8_t kStartLane = 1; //start counting from 0 t(left most lane)
 static const double kReferenceVelocity = 49.5; //mph
 static const double kSafeDistanceToSpeedRatio = 1.5;
-const uint8_t kTotalTrajectoryPoints = 50;
-const uint8_t kTotalTrajectoryAnchorPoints = 5;
-const uint8_t kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
 const uint8_t kLaneWidth = 4; // in meters
 static const double kCarPositionRefreshTime = 0.02; // in seconds
 static const double kDecelerationConformLimit = 9; // in m/s2
 static const double kAccelerationConformLimit = 9; // in m/s2
 constexpr std::uint8_t kEgoVehicleId = std::numeric_limits<std::uint8_t>::max();
-
-pair<vector<double>, vector<double>> CalculateDrivingTrajectory(const DrivingContext& driving_context,
-  const Vehicle& ego_vehicle, const vector<pair<double, double>>& remaining_previous_trajectory,
-  const double& remaining_previous_trajectory_end_s, const DrivingState& target_driving_state){
-
-
-  // build smooth trajectory using points from previous path
-  double ref_x = ego_vehicle.x_;
-  double ref_y = ego_vehicle.y_;
-  double ref_yaw = deg2rad(ego_vehicle.yaw_);
-
-  // anchor points for generating new trajectory through
-  vector<double> anchor_points_x;
-  vector<double> anchor_points_y;
-
-  const std::size_t previous_trajectory_size = remaining_previous_trajectory.size();
-  if(previous_trajectory_size < 2) { //if previous path is almost empty use ccp as start point
-
-    // calculate previous waypoints using current car yaw
-    double previous_car_x = ego_vehicle.x_ - cos(ego_vehicle.yaw_);
-    double previous_car_y = ego_vehicle.y_ - sin(ego_vehicle.yaw_);
-
-    // use two last  waypoints from previous path for interpolation to make transition smoother
-    anchor_points_x.push_back(previous_car_x);
-    anchor_points_x.push_back(ego_vehicle.x_);
-
-    anchor_points_y.push_back(previous_car_y);
-    anchor_points_y.push_back(ego_vehicle.y_);
-
-  } else { // otherwise use last point of previous path as reference waypoint
-
-    ref_x = remaining_previous_trajectory[previous_trajectory_size - 1].first;
-    ref_y = remaining_previous_trajectory[previous_trajectory_size - 1].second;
-    double ref_x_previous = remaining_previous_trajectory[previous_trajectory_size - 2].first;
-    double ref_y_previous = remaining_previous_trajectory[previous_trajectory_size - 2].second;
-    ref_yaw = atan2(ref_y - ref_y_previous, ref_x - ref_x_previous);
-
-    // use two last  waypoints from previous path for interpolation to make transition smoother
-    anchor_points_x.push_back(ref_x_previous);
-    anchor_points_x.push_back(ref_x);
-
-    anchor_points_y.push_back(ref_y_previous);
-    anchor_points_y.push_back(ref_y);
-  }
-
-  // set the starting point of new trajectory generation to last point of previous trajectory
-  // since all previous points are just inherited by new trajectory
-  double new_trajectory_points_start_s = (previous_trajectory_size > 0) ?
-    remaining_previous_trajectory_end_s : ego_vehicle.s_;
-
-  // generate key points of new trajectory (to interpolate through them later)
-  for (int i = 0; i < kTotalTrajectoryAnchorPoints; i++) {
-
-    pair<double, double> next_key_point =
-      getXY(new_trajectory_points_start_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
-        GetLaneCenterLineD(target_driving_state.lane_index, driving_context.lane_width_),
-        driving_context.map_waypoints_s_, driving_context.map_waypoints_x_, driving_context.map_waypoints_y_);
-    anchor_points_x.push_back(next_key_point.first);
-    anchor_points_y.push_back(next_key_point.second);
-
-  }
-
-  // change reference angle to local coordinates system frame
-  for (int i = 0; i < anchor_points_x.size(); i++) {
-    double shift_x = anchor_points_x[i] - ref_x;
-    double shift_y = anchor_points_y[i] - ref_y;
-
-    anchor_points_x[i] = (shift_x * cos(0-ref_yaw) - shift_y * sin(0-ref_yaw));
-    anchor_points_y[i] = (shift_x * sin(0-ref_yaw) + shift_y * cos(0-ref_yaw));
-  }
-
-  // create spline for interpolation
-  tk::spline trajectory_spline;
-  trajectory_spline.set_points(anchor_points_x, anchor_points_y);
-
-
-  vector<double> trajectory_x;
-  vector<double> trajectory_y;
-
-  // use remaining waypoints from previous trajectory as part of new trajectory
-  for (int i = 0; i < previous_trajectory_size; i++){
-    trajectory_x.push_back(remaining_previous_trajectory[i].first);
-    trajectory_y.push_back(remaining_previous_trajectory[i].second);
-  }
-
-  // calculate trajectory points by breaking down the distance between anchor points into segments on the spline
-  // in the way that ego velocity will not exceed speed limit
-  double target_x = kDistanceBetweenTrajectoryKeyPoints;
-  double target_y = trajectory_spline(target_x);
-  const double target_dist = sqrt(target_x*target_x + target_y*target_y);
-  const double total_segments = target_dist /
-    (driving_context.ego_postion_refresh_interval_ * target_driving_state.kinematics.velocity);
-
-
-  //fill in the rest of trajectory points
-  double updated_x = 0;
-  for (int i = 0; i < (kTotalTrajectoryPoints - remaining_previous_trajectory.size()); i++) {
-    double point_x = updated_x + target_dist / total_segments;
-    double point_y = trajectory_spline(point_x);
-
-    updated_x = point_x;
-
-    double x_tmp = point_x;
-    double y_tmp = point_y;
-
-    // change reference angle back to global coordinates system frame
-    point_x = x_tmp * cos(ref_yaw) - y_tmp * sin(ref_yaw);
-    point_y = x_tmp * sin(ref_yaw) + y_tmp * cos(ref_yaw);
-
-    point_x+= ref_x;
-    point_y+= ref_y;
-
-
-    trajectory_x.push_back(point_x);
-    trajectory_y.push_back(point_y);
-
-  }
-
-  return std::make_pair(trajectory_x,trajectory_y);
-}
-
-
 
 json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const json& telemetry_data,
                           Vehicle& ego_vehicle, DrivingState& target_driving_state){
@@ -180,8 +54,8 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
   target_driving_state = ego_vehicle.CalculateNextOptimalDrivingState(other_vehicles);
 
   // generate optimal trajectory for target state
-  const pair<vector<double>, vector<double>> trajectory = CalculateDrivingTrajectory(
-    *context, ego_vehicle, remaining_previous_trajectory, end_path_s, target_driving_state);
+  const pair<vector<double>, vector<double>> trajectory = ego_vehicle.CalculateDrivingTrajectory(
+    remaining_previous_trajectory, end_path_s, target_driving_state);
 
   // create and populate the response to be send back to simulator
   json response_message;
@@ -198,11 +72,12 @@ int main() {
     map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
 
   // create driving environment context
-  DrivingContext context{kTotalLanes, kLaneWidth, kReferenceVelocity/kMpsToMphRatio, kCarPositionRefreshTime,
+  const DrivingContext context{kTotalLanes, kLaneWidth, kReferenceVelocity/kMpsToMphRatio, kCarPositionRefreshTime,
     kSafeDistanceToSpeedRatio, kDecelerationConformLimit, kAccelerationConformLimit, std::move(map_waypoints_x),
     std::move(map_waypoints_y),std::move(map_waypoints_s), std::move(map_waypoints_dx), std::move(map_waypoints_dy)};
 
   // create instance of ego vehicle and configure it with initial settings
+  // after every vehicle movement step these two instances will be updated with new calculated data
   Vehicle ego_vehicle(std::make_shared<DrivingContext>(context), kEgoVehicleId, kStartLane, 0, 0, 0, 0, 0);
   DrivingState target_driving_state{kStartLane, {.0, .0, .0}, State::KEEP_LANE};
 
@@ -222,10 +97,10 @@ int main() {
         
         if (event == "telemetry") {
           // j[1] is the telemetry data JSON object
-          json msgJson = ProcessTelemetryData(
+          const json msgJson = ProcessTelemetryData(
             std::make_shared<DrivingContext>(context), j[1], ego_vehicle, target_driving_state);
 
-          auto msg = "42[\"control\","+ msgJson.dump()+"]";
+          const auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }  // end "telemetry" if
