@@ -8,18 +8,20 @@ using std::vector;
 
 struct DrivingContext {
 
-  std::uint8_t total_lanes_;
-  double lane_width_; // in meters
-  double max_speed_; // in mps
-  double ego_postion_refresh_interval_; // in seconds
-  double safe_distance_to_speed_ratio_;
-  double max_deceleration_ ; // in m/s2
-  double max_accceleration_; // in m/s2
-  vector<double> map_waypoints_x_;
-  vector<double> map_waypoints_y_;
-  vector<double> map_waypoints_s_;
-  vector<double> map_waypoints_dx_;
-  vector<double> map_waypoints_dy_;
+  std::uint8_t total_lanes;
+  double lane_width; // in meters
+  double max_speed; // in mps
+  double ego_postion_refresh_interval; // in seconds
+  double safe_ratio_distance_to_speed;
+  double safe_distance_to_vehicle_behind; // in meters
+  double max_deceleration; // in m/s2
+  double max_accceleration; // in m/s2
+  double safe_time_to_maneuver_start;
+  vector<double> map_waypoints_x;
+  vector<double> map_waypoints_y;
+  vector<double> map_waypoints_s;
+  vector<double> map_waypoints_dx;
+  vector<double> map_waypoints_dy;
 
 };
 

@@ -187,19 +187,6 @@ const pair<double, double> getXY(double s, double d, const vector<double> &maps_
   return {x,y};
 }
 
-bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, float& lane_speed) {
-  // All non ego vehicles in a lane have the same speed, so to get the speed
-  //   limit for a lane, we can just find one vehicle in that lane.
-  for (Vehicle vehicle : predictions) {
-    if (vehicle.lane_index_ == lane_index) {
-      lane_speed = vehicle.velocity_;
-      return true;
-    }
-  }
-  // Found no vehicle in the lane
-  return false;
-}
-
 const std::uint8_t CalculateLaneIndex(double d, double lane_width) {
   return d / lane_width;
 }
@@ -214,7 +201,7 @@ Vehicle CreateVehicle(const std::shared_ptr<DrivingContext>& context, const json
   const std::uint8_t id = sensor_data[0];
   const double s = sensor_data[5];
   const double d = sensor_data[6];
-  const std::uint8_t lane_index = CalculateLaneIndex(d, context->lane_width_);
+  const std::uint8_t lane_index = CalculateLaneIndex(d, context->lane_width);
   return Vehicle(context, id, lane_index, x, y, velocity, s, d);
 }
 
@@ -226,7 +213,6 @@ std::string GetStateName(State state) {
       case State::LANE_CHANGE_LEFT  : return "Lane Change Left";
       case State::PREP_LANE_CHANGE_RIGHT  : return "Prepare Lane Change Right";
       case State::LANE_CHANGE_RIGHT  : return "Lane Change Right";
-      case State::CONSTANT_SPEED  : return "Constant Speed";
       default:
         throw std::runtime_error("Unsupported state");
   }
@@ -268,6 +254,12 @@ const vector<Vehicle> FetchOtherVehicles(
 void UpdateEgoVehileWithLatestDrivingParams(const json& telemetry_data,
   DrivingState& current_driving_state, Vehicle& ego_vehicle){
 
+  // update current state of ego vehicle
+  ego_vehicle.state_ = current_driving_state.state;
+
+  // update ego lane index
+  ego_vehicle.lane_index_ = current_driving_state.target_lane_index;
+
   // update ego vehicle driving parameters using the telemetry data received from simulator
   ego_vehicle.x_ = (double) telemetry_data["x"];
   ego_vehicle.y_ = (double) telemetry_data["y"];
@@ -275,8 +267,10 @@ void UpdateEgoVehileWithLatestDrivingParams(const json& telemetry_data,
   ego_vehicle.d_ = (double) telemetry_data["d"];
   ego_vehicle.yaw_ = telemetry_data["yaw"];
 
-  // we assume that ego velocity  was set in simulator in previous step to provided target velocity
+  // we assume that ego velocity and acceleration were set in simulator in previous step using
+  // provided target driving state
   ego_vehicle.velocity_ = current_driving_state.kinematics.velocity;
+  ego_vehicle.acceleration_ = current_driving_state.kinematics.acceleration;
 
   // this somehow does not work: resulting speed is way smaller than set into target state in previous step
   // ego_vehicle.velocity_ = (double) telemetry_data["speed"] / kMpsToMphRatio;

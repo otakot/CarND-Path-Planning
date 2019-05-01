@@ -1,12 +1,10 @@
 #ifndef DRIVING_STATE_H
 #define DRIVING_STATE_H
 
-#include <utility>
 #include <cstdint>
 
 enum class State {
-  CONSTANT_SPEED, //initial state
-  KEEP_LANE,
+  KEEP_LANE, // initial state
   PREP_LANE_CHANGE_LEFT,
   LANE_CHANGE_LEFT,
   PREP_LANE_CHANGE_RIGHT,
@@ -14,13 +12,17 @@ enum class State {
 };
 
 struct DrivingKinematics {
-  double s; // in meters
   double velocity; // in m/s
   double acceleration; // in m/s2
 };
 
+/**
+ * By target and intended lanes it is meant the scenario when we still want to keep driving in lane 1
+ * (target lane) but meanwhile prepare for changing to lane 2 soon (intended lane)
+ */
 struct DrivingState {
-  std::uint8_t lane_index; // not sure about initial lane index
+  std::uint8_t target_lane_index;
+  std::uint8_t intended_lane_index;
   DrivingKinematics kinematics;
   State state;
 };

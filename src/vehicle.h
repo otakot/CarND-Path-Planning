@@ -14,37 +14,45 @@ class Vehicle {
  public:
   /**
    * @brief Constructor
+   *
+   * @param driving_context
+   * @param id vehilce's unique ID
+   * @param lane_index Index of the road lane (indices start from 0 for left most lane)
+   * @param x X coordinate of the vehicle (in global coordinate system frame)
+   * @param y Y coordinate of the vehicle (in global coordinate system frame)
+   * @param velocity Velocity of the vehicle
+   * @param s Longitudinal position of vehicle in relation to start point of the track in Frenet coordinate
+   *          system frame
+   * @param d Lateral shift from center of the road (yellow line )of vehicle (in Frenet coordinate system
+   *          frame)
+   * @param yaw Yaw of the vehicle in (in global coordinate system frame)
+   * @param acceleration Acceleration of the vehicle (in m/s2)
+   * @param state Current driving state of vehicle
    */
-  Vehicle(const std::shared_ptr<DrivingContext> driving_context, uint8_t id, uint8_t lane_index, double x,
-    double y,double velocity, double s, double d, double yaw=.0, double acceleration=.0,
-    State state= State::KEEP_LANE) : driving_context_(driving_context), id_(id), lane_index_(lane_index),
-    x_(x), y_(y), velocity_(velocity), s_(s),d_(d), yaw_(yaw), acceleration_(acceleration), state_(state){
+  Vehicle(const std::shared_ptr<DrivingContext> driving_context, const uint8_t id, const uint8_t lane_index,
+    const double& x, const double& y,const double& velocity, const double& s, const double& d,
+    const double& yaw=.0, const double& acceleration=.0, const State& state= State::KEEP_LANE) :
+    driving_context_(driving_context), id_(id), lane_index_(lane_index), x_(x), y_(y), velocity_(velocity),
+    s_(s),d_(d), yaw_(yaw), acceleration_(acceleration), state_(state){
   }
 
   /**
-   * @brief
+   *  @brief Calculates the optimal driving state of ego vehicle on the highway for moving cycle
+   *  executed in simulated driving environment (duration of one cycle is 0.02 seconds)
    *
-   * @param A predictions list. This is a list of prediceted vehilces. Trajectories are a vector of Vehicle
-   *   objects representing the vehicle at the current timestep and one timestep
-   *   in the future.
-   * @output The best (lowest cost) trajectory corresponding to the next ego
-   *   vehicle state.
+   *  @param predictions A list of detected other vehicles of the road.
    *
-   * Functions that will be useful:
-   * 1. successor_states - Uses the current state to return a vector of possible
-   *    successor states for the finite state machine.
-   * 2. generate_trajectory - Returns a vector of Vehicle objects representing
-   *    a vehicle trajectory, given a state and predictions. Note that
-   *    trajectory vectors might have size 0 if no possible trajectory exists
-   *    for the state.
-   * 3. calculate_cost - Included from cost.cpp, computes the cost for a trajectory.
+   *  @return Optimal set of driving parameters like state (e.g keep lane, chage to left lane, prepare for
+   *  change to right lane), target lane index, velocity, acceleration for next cycle of drive of ego vehicle
    */
-  const DrivingState CalculateNextOptimalDrivingState(const vector<Vehicle> &predictions) const;
+  const DrivingState CalculateNextOptimalDrivingState(const vector<Vehicle>& predictions) const;
 
   /**
-   *   @brief Provides the possible next states given the current state for the FSM
-   *   discussed in the course, with the exception that lane changes happen
-   *   instantaneously, so LCL and LCR can only transition back to KL.
+   *  @brief Provides the possible next states given the current state for the FSM
+   *  discussed in the course, with the exception that lane changes happen
+   *  instantaneously, so LCL and LCR can only transition back to KL.
+   *
+   *  @param predictions A list of detected other vehicles of the road.
    */
   const vector<State> GetFeasibleSuccessorStates(const vector<Vehicle> &predictions) const;
 
@@ -54,62 +62,78 @@ class Vehicle {
    * generated in previous step are used as a start waypoints for new generated trajectory to smooth
    * the transition between previous and new trajectory in case of possible sharp curve
    *
+   * @param remaining_previous_trajectory
+   * @param remaining_previous_trajectory_end_s
+   * @param target_driving_state
+   *
    * @return calculated trajectory as list of {x,y} coordinates (in global map coordinates system)
    */
   const std::pair<vector<double>, vector<double>> CalculateDrivingTrajectory(
     const vector<std::pair<double, double>>& remaining_previous_trajectory,
     const double& remaining_previous_trajectory_end_s, const DrivingState& target_driving_state) const;
 
+  double CalculateLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index) const;
+
+  /**
+   * Calculates the distance of detection of vehicles in front which is safe for executing the maneuver (eg.
+   * lane change) by ego vehicle with current driving parameters
+   *
+   * Assumption: vehicle ahead is moving with constant speed
+   *
+   * @return calculated safe foresight distance
+   */
+  double GetSafeForesightDistance() const;
+
 private:
 
-  bool IsLaneChangeLeftPossible(const vector<Vehicle>& predictions) const;
+  /**
+   * Calculate driving parameters of ego vehicle for given target state taking into account given list
+   * of other vehicles on the road
+   *
+   * @param target_state Target driving state of ego vehicle
+   * @param predictions A list of detected other vehicles of the road.
+   */
+  const std::pair<DrivingState, float> EvaluateTargetState(
+    const State& target_state, const vector<Vehicle>& predictions) const;
 
-  bool IsLaneChangeRightPossible(const vector<Vehicle>& predictions) const;
+  const std::pair<DrivingState, float> EvaluateConstantSpeedState(const vector<Vehicle>& predictions) const;
 
-  const DrivingState CreateDrivingState(
+  const std::pair<DrivingState, float> EvaluateKeepLaneState(const vector<Vehicle>& predictions) const;
+
+  const std::pair<DrivingState, float> EvaluateLaneChangeState(
+    const State& target_state, const vector<Vehicle> &predictions) const;
+
+  /**
+   * @brief Creates the  driving state parameters for Prepare to Lane Change target state.
+   * Implements following behavior:
+   * - if velocity in target lane is slower than ego velocity then:
+   *   - if there is no other vehicle behind ego
+   *     - smoothly slow down to match target lane speed to be able to switch lane without high deceleration
+   *   - otherwise keep current speed and wait for gap big enough to change to target lane
+   *
+   *  @param target_state Desired driving state (either PrepareLaneChangeLeft or PrepareLaneChangeRight)
+   *  @param predictions A list of detected other vehicles of the road.
+   */
+  const std::pair<DrivingState, float> EvaluatePrepareLaneChangeState(
     const State& target_state, const vector<Vehicle>& predictions) const;
 
   /**
    *  @brief Calculates vehilce kinematics for (position, velocity, acceleration)
    *  for a given lane index and time interval. Tries to choose the maximum velocity and acceleration,
    *  given other vehicle positions and accel/velocity constraints.
-   */
-  const DrivingKinematics CalculateVehilceKinematics(
-    const vector<Vehicle>& predictions, const uint8_t target_lane_index, const double time_interval) const;
-
-  const DrivingState CreateConstantSpeedState() const;
-
-  const DrivingState CreateKeepLaneState(const vector<Vehicle>& predictions) const;
-
-  const DrivingState CreateLaneChangeState(
-    const State& target_state, const vector<Vehicle> &predictions) const;
-
-  /**
-   * @brief Creates the  driving state parameters for Prepared Lane Change target state.
-   * This function implements preparation for safe lane change:
-   * - if velocity in target lane is slower than ego velocity then:
-   *   - if there is no other vehicle behind ego
-   *     - then smoothly slow down to match target lane speed to be able to switch lane without high deceleration
-   *   - otherwise keep current speed and wait for gap big enough to change to target lane
-   */
-  const DrivingState CreatePrepareLaneChangeState(
-    const State& target_state, const vector<Vehicle> &predictions) const;
-
-  /**
-   * @brief Predicts longitudinal position of the vehicle with current speed and acceleration
-   * for given time interval (in seconds)
    *
-   * @param time Time for prediction. In seconds
-   * @return predicted s position of the vehicle
+   *  @param target_lane_index Index of target road lane for driving
+   *  @param time_interval Time duration for calculating the driving kinematic parameters
    */
-  double PredictLongitudinalPosition(const double time) const;
+  const DrivingKinematics CalculateVehicleKinematics(
+    const vector<Vehicle>& predictions, const uint8_t target_lane_index, const double& time_interval) const;
 
   /**
    * @brief Returns a true if a vehicle is found in ego lane and is located ahead/behind ego vehicle.
    * The passed reference rVehicle is updated if a vehicle is found.
    *
    * @param [in]lane_index Index of checked lane
-   * @param [in] predictions List of predicted vehicles around the ego car
+   * @param [in] predictions A list of detected other vehicles of the road.
    * @param [in] ahead_of_ego Boolean flag indicating whether the detection should happen head or behind the ego car
    * @param [out] detected_vehicle Pointer to detected vehicle
    */
@@ -118,34 +142,38 @@ private:
 
   /**
    * @brief Checks whether the given is dangerously close too ego vehicle.
-   * Currently the check is fairly simple safe_distance >=
+   *
+   * @param vehicle Vehicle to check the distance to
    */
   bool IsVehicleTooClose(const Vehicle& vehicle) const ;
 
+  /**
+   * Checks whether a change to the Lane with given index is possible for ego vehicle at the moment
+   *
+   * @param target_lane_index Index of the road lane for lane change maneuver feasibility check
+   * @param predictions A list of detected other vehicles of the road.
+   */
   bool IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions) const;
 
-  //void ApplyTargetState(const DrivingState &target_state);
-
 public:
-
-  const uint8_t kTotalTrajectoryAnchorPoints = 5;
-  const uint8_t kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
-  const uint8_t kTotalTrajectoryPoints = 50;
-
-  const std::map<State, int> lane_index_change =
-    {{State::CONSTANT_SPEED, 0},
-    {State::KEEP_LANE, 0},
-    {State::PREP_LANE_CHANGE_LEFT, 0},
-    {State::LANE_CHANGE_LEFT, -1},
-    {State::PREP_LANE_CHANGE_RIGHT, 0},
-    {State::LANE_CHANGE_RIGHT, 1}};
-
-  // const int kPreferredBuffer = 6; // safe distance between ego car and other car.
-
   double x_, y_, velocity_, s_, d_, yaw_, acceleration_;
   std::shared_ptr<DrivingContext> driving_context_;
   uint8_t id_, lane_index_;
   State state_;
+
+private:
+
+  const uint8_t kTotalTrajectoryAnchorPoints = 5;
+  const uint8_t kDistanceBetweenTrajectoryKeyPoints = 30; // in meters
+  const uint8_t kTotalTrajectoryPoints = 50;
+  const double kMaxS = 6945.554; // The max s value before wrapping around the track back to 0
+
+  const std::map<State, int> lane_index_change =
+    {{State::KEEP_LANE, 0},
+    {State::PREP_LANE_CHANGE_LEFT, 0},
+    {State::LANE_CHANGE_LEFT, -1},
+    {State::PREP_LANE_CHANGE_RIGHT, 0},
+    {State::LANE_CHANGE_RIGHT, 1}};
 
 };
 

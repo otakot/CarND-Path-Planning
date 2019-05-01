@@ -54,8 +54,6 @@ const std::pair<double,double> getFrenet(double x, double y, double theta,
 const std::pair<double, double> getXY(double s, double d, const vector<double> &maps_s,
                      const vector<double> &maps_x, const vector<double> &maps_y);
 
-bool GetLaneSpeed(const vector<Vehicle>& predictions, const uint8_t lane_index, float& lane_speed);
-
 const double GetLaneCenterLineD(const uint8_t lane_index, const double& lane_width);
 
 /**
@@ -75,5 +73,6 @@ const vector<Vehicle> FetchOtherVehicles(
 
 void UpdateEgoVehileWithLatestDrivingParams(const json& telemetry_data,
   DrivingState& current_driving_state, Vehicle& ego_vehicle);
+
 
 #endif  // UTILITIES_H

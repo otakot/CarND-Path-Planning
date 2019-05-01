@@ -6,10 +6,8 @@
 #include <utility>
 #include <limits>
 #include <math.h>
-
-#include "Eigen/Core"
-#include "Eigen/QR"
 #include "json.hpp"
+
 #include "vehicle.h"
 #include "driving_context.h"
 #include "driving_state.h"
@@ -22,15 +20,18 @@ using std::vector;
 using std::pair;
 
 const string kTrackMapFilePath = "../data/highway_map.csv";  // Waypoint map to read from
-const double kMaxS = 6945.554; // The max s value before wrapping around the track back to 0
+
+// driving configuration parameters
 const uint8_t kTotalLanes = 3;
-const uint8_t kStartLane = 1; //start counting from 0 t(left most lane)
+const uint8_t kStartLane = 1; //start counting from 0 (left most lane)
 static const double kReferenceVelocity = 49.5; //mph
-static const double kSafeDistanceToSpeedRatio = 1.5;
+static const double kSafeRatioDistanceToSpeed = 1.3;
+static const double kSafeDistanceToVehicleBehind_= 5; // in meters
 const uint8_t kLaneWidth = 4; // in meters
 static const double kCarPositionRefreshTime = 0.02; // in seconds
-static const double kDecelerationConformLimit = 9; // in m/s2
-static const double kAccelerationConformLimit = 9; // in m/s2
+static const double kDecelerationConformLimit = 9.5; // in m/s2
+static const double kAccelerationConformLimit = 9.5; // in m/s2
+const double kSafeTimeToManeuverStart = 2; // in seconds
 constexpr std::uint8_t kEgoVehicleId = std::numeric_limits<std::uint8_t>::max();
 
 json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const json& telemetry_data,
@@ -38,7 +39,7 @@ json ProcessTelemetryData(const std::shared_ptr<DrivingContext> context, const j
 
   // update ego vehicle current driving params with data received from simulator
   UpdateEgoVehileWithLatestDrivingParams(telemetry_data, target_driving_state, ego_vehicle);
-  std::cout << "Current Ego vehicle driving params: " << LogVehilceDrivingParams(ego_vehicle) << std::endl;
+  std::cout << "Current Ego vehicle params: " << LogVehilceDrivingParams(ego_vehicle) << std::endl;
 
   // read remaining (uncovered by ego) part of previous  trajectory from telemetry data
   const vector<pair<double, double>> remaining_previous_trajectory = FetchRemaingPrevousTrajectory(telemetry_data);
@@ -73,13 +74,14 @@ int main() {
 
   // create driving environment context
   const DrivingContext context{kTotalLanes, kLaneWidth, kReferenceVelocity/kMpsToMphRatio, kCarPositionRefreshTime,
-    kSafeDistanceToSpeedRatio, kDecelerationConformLimit, kAccelerationConformLimit, std::move(map_waypoints_x),
-    std::move(map_waypoints_y),std::move(map_waypoints_s), std::move(map_waypoints_dx), std::move(map_waypoints_dy)};
+    kSafeRatioDistanceToSpeed, kSafeDistanceToVehicleBehind_, kDecelerationConformLimit, kAccelerationConformLimit,
+    kSafeTimeToManeuverStart, std::move(map_waypoints_x), std::move(map_waypoints_y),std::move(map_waypoints_s),
+    std::move(map_waypoints_dx), std::move(map_waypoints_dy)};
 
   // create instance of ego vehicle and configure it with initial settings
   // after every vehicle movement step these two instances will be updated with new calculated data
   Vehicle ego_vehicle(std::make_shared<DrivingContext>(context), kEgoVehicleId, kStartLane, 0, 0, 0, 0, 0);
-  DrivingState target_driving_state{kStartLane, {.0, .0, .0}, State::KEEP_LANE};
+  DrivingState target_driving_state{kStartLane, kStartLane, {.0, .0}, State::KEEP_LANE};
 
   uWS::Hub web_socket_hub;
   web_socket_hub.onMessage([&context, &ego_vehicle, &target_driving_state]
