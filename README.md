@@ -3,12 +3,12 @@
 This repository contains implementation of the Path Planner application that allows to control the car
 which is driving on the highway type of road in the simulated environment. 
 
-#### Communication between Road Simulator and Path Planning application
+### Communication between Road Simulator and Path Planning application
 
 The telemetry data which provided by the Simulator to the Path Planning application with a frequency of
 50 updates per second has following structure:
 
-##### Ego vehicle localization data
+#### Ego vehicle localization data
 
 * ["x"] - X position of ego vehicle in map coordinate system
 * ["y"] - Y position of ego vehicle in map coordinate system
@@ -17,7 +17,7 @@ The telemetry data which provided by the Simulator to the Path Planning applicat
 * ["yaw"] -  yaw angle of ego vehicle in map coordinate system
 * ["speed"] - Speed of ego vehicle
 
-##### Previous driving trajectory data
+#### Previous driving trajectory data
 
 The provided ego vehicle's previous trajectory will not contain the waypoints which ego vehicle was not
 able to cover during the time frame between current and previous events of communication with the Road
@@ -26,12 +26,12 @@ Simulator.
 * ["previous_path_x"] - The X points of previous ego vehicle trajectory (in map coordinate system frame)
 * ["previous_path_y"] - The Y points of previous ego vehicle trajectory (in map coordinate system frame)
 
-##### S and D values of previous driving trajectory
+#### S and D values of previous driving trajectory
 
 * ["end_path_s"] - The S value of the end of previous trajectory (in Frenet coordinates)
 * ["end_path_d"] - The D value of the end of previous trajectory (in Frenet coordinates)
 
-##### Sensor Fusion data 
+#### Sensor Fusion data 
 
 During each communication event the simulator also provides the list of driving attributes of all other
 vehicles detected on the same side of the road around the ego vehicle.
@@ -46,7 +46,7 @@ the following attributes:
   * S position (in frenet coordinates)
   * D position (in frenet coordinates) 
   
-##### Ego Vehilce control data wchich is sent back to Road Simulator
+#### Ego Vehilce control data wchich is sent back to Road Simulator
 
 A list of waypoints represented by two separate arrays of X and Y coordinates is sent back by Path Planning application to Road Simulator periodically during every communication event. The waypoints represent the 
 calculated optimal trajectory of ego vehicle. Vehilce controller used in Road Simulator every 0.02 will 
@@ -57,12 +57,12 @@ also defines the heading of the car. Acceleration both in the tangential and nor
 along with the jerk (the amplitude of change of acceleration).
 
 
-#### Description of implemented Path Planning model
+### Description of implemented Path Planning model
 
 The path plannning model implemented in this application is fully based on handling the following 
 requirements with respect to safety, comfort and efficiency of drive of ego vehicle:
 
-##### Implemented project requirements 
+#### Implemented project requirements 
 
 * Ego vehice avoids crossing the yellow lane that divides the driving directions of simulated highway.
  
@@ -84,12 +84,12 @@ requirements with respect to safety, comfort and efficiency of drive of ego vehi
   to biggest allowed driving speed) by overtaking the slower vehicles ahead. The overtake maneuvers are
   executed via changing to the 'faster; lane, if such lane change is possible in current driving conditions. 
 
-##### Application architecture description
+#### Application architecture description
 
 High level execution workflow of Path Planning application is defined in main.cpp and can be logically
 divided into following parts:
 
-##### Preparation the data model of driving environment
+#### Preparation the data model of driving environment
 
 This initial phase of application execution implementes the parsing the road model provided in text data 
 file (highway_map.csv) (see lines 70-73 in main.cpp) and loading parsed road attributes (x, y, dx, dy, s) 
@@ -97,7 +97,7 @@ into corresponding data containers. Later on this road model wil be used for cor
 vehicle on simulated road and generating of driving trajectory. Additionally a full list of driving 
 parameters is loaded into Drivng Context class, which is used during whole application lifecycle.
 
-##### Initialization of Ego Vehicle and start of driving
+#### Initialization of Ego Vehicle and start of driving
 
 After creating the road model the instance of Ego vehicle is cretaed and initialized with default values
 for such parameters as driving lane index, velocity, acceleration and initial state of the driving strategy
@@ -107,7 +107,7 @@ maininting the constant acceeration 9.5 m/s2 until the vehicle reaches the maxim
 per hour. Afterwards vehicle will maintain this speed on a free road segments and decreaase it to in the
 cases where maintaining such speed is not possible because of safety or comfort limitations.
 
-##### Cyclic processing of telemetry data received from Drivng Simulator
+#### Cyclic processing of telemetry data received from Drivng Simulator
 
 The core part of the application is the funciton **Vehilce::ProcessTelemetryData()**
 (see lines 37-66 in main.cpp) which is invoked every time when application receives a new portion of
@@ -120,7 +120,7 @@ optimal one for this time frame. The optimality of the driving state is always r
 value of all estimated costs of corresponing state (see **Vehicle::CalculateNextOptimalDrivingState()** 
 function in vehicle.cpp). Details of state cost calculation are described below.
 
-##### Driving Strartegy state maschine
+#### Driving Strartegy state maschine
 The driving related decisions of ego vehicle (like keep driving in the current lane, decelerate before the
 lane chane or lane change itself) are controlled by Driving Strategy state machine which is part of 
 Vehicle class. During the drivr ego vehicle always stays in one of following driving states:
@@ -146,7 +146,7 @@ function in vehicle.cpp)
 trajectory that aims safe and comfortable lateral shift of ego vehicle from the center of current lane
 to center line of target optimal lane.
 
-##### Trajectory planning 
+#### Trajectory planning 
 
 Thhe whole process of planning the driving trajectory for calculated optimal target lane and speed of ego
 vehicle is encapsulated in **Vehicle::CalculateDrivingTrajectory()** function (vehicle.cpp).
@@ -168,7 +168,7 @@ acceleration/deceleration limitations on each of these trajectory segments. The 
 points of calculated segments are then added to remaining waypoints of previous trajectory and alltogether
 they represent the resulting driving trajectory which is sent back to Road Simulator (see lines 394-425 in vehicle.cpp)
 
-##### Driving State Cost calculation
+#### Driving State Cost calculation
 
 The calculated total cost of each Driving State of ego vehicle is always a sum of following costs:
 
@@ -185,7 +185,7 @@ states for the same target lane, the preference will be given to Lane Change sta
 value of this particular cost component. (see lanes 35-49 in cost.cpp)
 
 
-#### Further potential impromements of Path Planning application
+### Further potential impromements of Path Planning application
 
 Following features of Path Planner which are not yet implemented could potentially improve the overall level
 of safety, comfort and efficiency for ego vehicle drive:
@@ -208,11 +208,11 @@ be based on Time To Collision formula, which takes into account all kinematic pa
 
 
 
-#### Setup instructions
+### Setup instructions
 
 This project requires the Term 3 Simulator which can be downloaded [here](https://github.com/udacity/self-driving-car-sim/releases/tag/T3_v1.2)
 
-##### Application build dependencies
+#### Application build dependencies
 
 * cmake >= 3.5
   
@@ -236,7 +236,7 @@ This project requires the Term 3 Simulator which can be downloaded [here](https:
 
 
 
-##### Build Instructions
+#### Building the application
 
 Once installation of all dependencies is complete, the main program can be built and run by doing the following from the project top directory.
 
