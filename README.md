@@ -89,7 +89,7 @@ requirements with respect to safety, comfort and efficiency of drive of ego vehi
 High level execution workflow of Path Planning application is defined in main.cpp and can be logically
 divided into following parts:
 
-#### Preparation the data model of driving environment
+##### Preparation the data model of driving environment
 
 This initial phase of application execution implementes the parsing the road model provided in text data 
 file (highway_map.csv) (see lines 70-73 in main.cpp) and loading parsed road attributes (x, y, dx, dy, s) 
@@ -97,7 +97,7 @@ into corresponding data containers. Later on this road model wil be used for cor
 vehicle on simulated road and generating of driving trajectory. Additionally a full list of driving 
 parameters is loaded into Drivng Context class, which is used during whole application lifecycle.
 
-#### Initialization of Ego Vehicle and start of driving
+##### Initialization of Ego Vehicle and start of driving
 
 After creating the road model the instance of Ego vehicle is cretaed and initialized with default values
 for such parameters as driving lane index, velocity, acceleration and initial state of the driving strategy
@@ -107,7 +107,7 @@ maininting the constant acceeration 9.5 m/s2 until the vehicle reaches the maxim
 per hour. Afterwards vehicle will maintain this speed on a free road segments and decreaase it to in the
 cases where maintaining such speed is not possible because of safety or comfort limitations.
 
-#### Cyclic processing of telemetry data received from Drivng Simulator
+##### Cyclic processing of telemetry data received from Drivng Simulator
 
 The core part of the application is the funciton **Vehilce::ProcessTelemetryData()**
 (see lines 37-66 in main.cpp) which is invoked every time when application receives a new portion of
@@ -120,7 +120,7 @@ optimal one for this time frame. The optimality of the driving state is always r
 value of all estimated costs of corresponing state (see **Vehicle::CalculateNextOptimalDrivingState()** 
 function in vehicle.cpp). Details of state cost calculation are described below.
 
-#### Driving Strartegy state maschine
+##### Driving Strartegy state maschine
 The driving related decisions of ego vehicle (like keep driving in the current lane, decelerate before the
 lane chane or lane change itself) are controlled by Driving Strategy state machine which is part of 
 Vehicle class. During the drivr ego vehicle always stays in one of following driving states:
@@ -146,7 +146,7 @@ function in vehicle.cpp)
 trajectory that aims safe and comfortable lateral shift of ego vehicle from the center of current lane
 to center line of target optimal lane.
 
-#### Trajectory planning 
+##### Trajectory planning 
 
 Thhe whole process of planning the driving trajectory for calculated optimal target lane and speed of ego
 vehicle is encapsulated in **Vehicle::CalculateDrivingTrajectory()** function (vehicle.cpp).
@@ -168,7 +168,7 @@ acceleration/deceleration limitations on each of these trajectory segments. The 
 points of calculated segments are then added to remaining waypoints of previous trajectory and alltogether
 they represent the resulting driving trajectory which is sent back to Road Simulator (see lines 394-425 in vehicle.cpp)
 
-#### Driving State Cost calculation
+##### Driving State Cost calculation
 
 The calculated total cost of each Driving State of ego vehicle is always a sum of following costs:
 
