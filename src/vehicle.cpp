@@ -27,14 +27,16 @@ const DrivingState Vehicle::CalculateNextOptimalDrivingState(const vector<Vehicl
 
   vector<DrivingState> feasible_next_driving_states;
   std::cout << "Calculating feasible driving states for transition..."  << std::endl <<
-               "-----------------------------------------------------------------------------------" << std::endl;
+               "-----------------------------------------------------------------------------------" <<
+               std::endl;
   for (const State state_id : sucessor_states) {
      // generate the driving parameters and calculate cost for feasable state
     const std::pair<DrivingState, float> evaluated_target_state = EvaluateTargetState(state_id, predictions);
 
     std::cout << LogDrivingState(evaluated_target_state.first) <<
       ", Cost: "  << evaluated_target_state.second << std::endl;
-    std::cout << "-----------------------------------------------------------------------------------" << std::endl;
+    std::cout << "-----------------------------------------------------------------------------------" <<
+              std::endl;
     feasible_next_driving_states.push_back(evaluated_target_state.first);
     costs.push_back(evaluated_target_state.second);
   }
@@ -43,7 +45,8 @@ const DrivingState Vehicle::CalculateNextOptimalDrivingState(const vector<Vehicl
   std::uint16_t optimal_state_index = distance(begin(costs), best_cost);
 
   DrivingState optimal_next_driving_state = feasible_next_driving_states[optimal_state_index];
-  std::cout << "Target state selected : "  << GetStateName(optimal_next_driving_state.state) << std::endl << std::endl;
+  std::cout << "Target state selected : "  << GetStateName(optimal_next_driving_state.state) <<
+            std::endl << std::endl;
   return optimal_next_driving_state;
 }
 
@@ -96,7 +99,8 @@ const std::pair<DrivingState, float> Vehicle::EvaluateTargetState(
   }
 }
 
-const std::pair<DrivingState, float>Vehicle::EvaluateKeepLaneState(const vector<Vehicle>& predictions) const{
+const std::pair<DrivingState, float>Vehicle::EvaluateKeepLaneState(
+  const vector<Vehicle>& predictions) const{
 
   DrivingKinematics kinematics = CalculateVehicleKinematics(
     predictions, lane_index_, driving_context_->ego_postion_refresh_interval);
@@ -115,7 +119,8 @@ const std::pair<DrivingState, float> Vehicle::EvaluatePrepareLaneChangeState(
   assert((target_state == State::PREP_LANE_CHANGE_LEFT && lane_index_ > 0 ) ||
           (target_state == State::PREP_LANE_CHANGE_RIGHT && lane_index_ < driving_context_->total_lanes));
 
-  const uint8_t intended_lane_index = lane_index_ + ((target_state == State::PREP_LANE_CHANGE_LEFT) ? -1 : 1);
+  const uint8_t intended_lane_index = lane_index_ +
+    ((target_state == State::PREP_LANE_CHANGE_LEFT) ? -1 : 1);
 
   const DrivingKinematics ego_lane_kinematics = CalculateVehicleKinematics(
     predictions, lane_index_, driving_context_->ego_postion_refresh_interval);
@@ -133,7 +138,8 @@ const std::pair<DrivingState, float> Vehicle::EvaluatePrepareLaneChangeState(
    bool tailgaiting_vehicle_behind_detected =
       GetClosestVehicleInLane(lane_index_, predictions, false, detected_vehicle_behind) &&
         IsVehicleTooClose(*detected_vehicle_behind);
-   if (intended_lane_kinematics.velocity < ego_lane_kinematics.velocity && !tailgaiting_vehicle_behind_detected) {
+   if (intended_lane_kinematics.velocity < ego_lane_kinematics.velocity &&
+       !tailgaiting_vehicle_behind_detected) {
       // we slow down to the safe speed of target lane (to safely switch lane behind the car in front in the  target lane)
       optimal_kinematics = intended_lane_kinematics;
    } else  {
@@ -170,14 +176,16 @@ const std::pair<DrivingState, float> Vehicle::EvaluateLaneChangeState(
   return std::make_pair(driving_state, cost);
 }
 
-bool Vehicle::IsLaneChangePossible(const uint8_t& target_lane_index, const vector<Vehicle>& predictions) const{
+bool Vehicle::IsLaneChangePossible(const uint8_t& target_lane_index,
+  const vector<Vehicle>& predictions) const{
 
   // check if another vehicle occupies the 'safe lane change' segment of target lane
   bool lane_chnage_possible = true;
   std::shared_ptr<Vehicle> vehicle_ahead = nullptr;
   std::shared_ptr<Vehicle> vehicle_behind = nullptr;
 
-  std::cout << "Checking safety conditions for changing to lane " << (int) target_lane_index << "..." << std::endl;
+  std::cout << "Checking safety conditions for changing to lane " <<
+            (int) target_lane_index << "..." << std::endl;
   if (GetClosestVehicleInLane(target_lane_index, predictions, true, vehicle_ahead) &&
       IsVehicleTooClose(*vehicle_ahead)) {
     std::cout << "Change to lane " << (int) target_lane_index <<
@@ -198,8 +206,8 @@ bool Vehicle::IsLaneChangePossible(const uint8_t& target_lane_index, const vecto
   return lane_chnage_possible;
 }
 
-const DrivingKinematics Vehicle::CalculateVehicleKinematics(
-    const vector<Vehicle>& predictions, const uint8_t target_lane_index, const double& time_interval) const {
+const DrivingKinematics Vehicle::CalculateVehicleKinematics(const vector<Vehicle>& predictions,
+  const uint8_t target_lane_index, const double& time_interval) const {
 
   const double max_velocity_increment =
     std::min((velocity_ + driving_context_->max_accceleration*time_interval), driving_context_->max_speed);
@@ -212,7 +220,8 @@ const DrivingKinematics Vehicle::CalculateVehicleKinematics(
   std::shared_ptr<Vehicle> vehicle_behind = nullptr;
 
   //std::cout << "Calculating ego vehilce kinematics...";
-  if (GetClosestVehicleInLane(target_lane_index, predictions, true, vehicle_ahead) && IsVehicleTooClose(*vehicle_ahead)) {
+  if (GetClosestVehicleInLane(target_lane_index, predictions, true, vehicle_ahead) &&
+      IsVehicleTooClose(*vehicle_ahead)) {
 
       new_velocity = max_velocity_decrement;
     //}
@@ -287,7 +296,8 @@ double Vehicle::CalculateLaneSpeed(const vector<Vehicle>& predictions, const uin
   }
   // Found no vehicle in the lane
   std::cout << "  Target Lane " << (int) lane_index << " info: Distance to vehicle ahead: UNKNOWN, " <<
-    "Calculated lane speed: " << driving_context_->max_speed * kMpsToMphRatio << " mph (max allowed)" << std:: endl;
+    "Calculated lane speed: " << driving_context_->max_speed * kMpsToMphRatio << " mph (max allowed)" <<
+    std:: endl;
   return driving_context_->max_speed;
 }
 
@@ -351,11 +361,11 @@ const pair<vector<double>, vector<double>> Vehicle::CalculateDrivingTrajectory(
 
     pair<double, double> next_key_point =
       getXY(new_trajectory_points_start_s + (i+1) * kDistanceBetweenTrajectoryKeyPoints,
-        GetLaneCenterLineD(target_driving_state.target_lane_index, driving_context_->lane_width),
-         driving_context_->map_waypoints_s, driving_context_->map_waypoints_x, driving_context_->map_waypoints_y);
+         GetLaneCenterLineD(target_driving_state.target_lane_index, driving_context_->lane_width),
+         driving_context_->map_waypoints_s,
+         driving_context_->map_waypoints_x, driving_context_->map_waypoints_y);
     anchor_points_x.push_back(next_key_point.first);
     anchor_points_y.push_back(next_key_point.second);
-
   }
 
   // change reference angle to local coordinates system frame
@@ -367,10 +377,6 @@ const pair<vector<double>, vector<double>> Vehicle::CalculateDrivingTrajectory(
     anchor_points_y[i] = (shift_x * sin(0-ref_yaw) + shift_y * cos(0-ref_yaw));
   }
 
-  // create spline for interpolation
-  tk::spline trajectory_spline;
-  trajectory_spline.set_points(anchor_points_x, anchor_points_y);
-
 
   vector<double> trajectory_x;
   vector<double> trajectory_y;
@@ -380,6 +386,10 @@ const pair<vector<double>, vector<double>> Vehicle::CalculateDrivingTrajectory(
     trajectory_x.push_back(remaining_previous_trajectory[i].first);
     trajectory_y.push_back(remaining_previous_trajectory[i].second);
   }
+
+  // create spline for interpolation
+  tk::spline trajectory_spline;
+  trajectory_spline.set_points(anchor_points_x, anchor_points_y);
 
   // calculate trajectory points by breaking down the distance between anchor points into segments on the spline
   // in the way that ego velocity will not exceed speed limit
